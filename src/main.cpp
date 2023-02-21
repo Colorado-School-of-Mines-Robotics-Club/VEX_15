@@ -1,14 +1,35 @@
 #include "main.h"
 
+#include <stdlib.h>
+
 #include "ports.h"
 
 /**
  * A callback function for LLEMU's center button.
- *
- * When this callback is fired, it will toggle line 2 of the LCD text between
- * "I was pressed!" and nothing.
  */
 void on_center_button() {
+	pros::Motor front_left_mtr(FRONT_LEFT_MTR_PRT);
+	pros::Motor front_right_mtr(FRONT_RIGHT_MTR_PRT);
+	pros::Motor back_left_mtr(BACK_LEFT_MTR_PRT);
+	pros::Motor back_right_mtr(BACK_RIGHT_MTR_PRT);
+	pros::Motor intake_a_mtr(INTAKE_A_MTR_PRT);
+	pros::Motor intake_b_mtr(INTAKE_B_MTR_PRT);
+	pros::Motor catapult_a_mtr(CATAPULT_A_MTR_PRT);
+	pros::Motor catapult_b_mtr(CATAPULT_B_MTR_PRT);
+
+	front_left_mtr = 0.0;
+	front_right_mtr = 0.0;
+	back_left_mtr = 0.0;
+	back_right_mtr = 0.0;
+	intake_a_mtr = 0.0;
+	intake_b_mtr = 0.0;
+	catapult_a_mtr = 0.0;
+	catapult_b_mtr = 0.0;
+
+	// intake_a_mtr.set_zero_position(0.0);
+	// intake_b_mtr.set_zero_position(0.0);
+	// intake_a_mtr.move_absolute(0.0, 30);
+	// intake_b_mtr.move_absolute(0.0, 30);
 }
 
 /**
@@ -26,7 +47,41 @@ void initialize() {
  * the VEX Competition Switch, following either autonomous or opcontrol. When
  * the robot is enabled, this task will exit.
  */
-void disabled() {}
+void disabled() {
+	pros::Motor front_left_mtr(FRONT_LEFT_MTR_PRT);
+	pros::Motor front_right_mtr(FRONT_RIGHT_MTR_PRT);
+	pros::Motor back_left_mtr(BACK_LEFT_MTR_PRT);
+	pros::Motor back_right_mtr(BACK_RIGHT_MTR_PRT);
+	pros::Motor intake_a_mtr(INTAKE_A_MTR_PRT);
+	pros::Motor intake_b_mtr(INTAKE_B_MTR_PRT);
+	pros::Motor catapult_a_mtr(CATAPULT_A_MTR_PRT);
+	pros::Motor catapult_b_mtr(CATAPULT_B_MTR_PRT);
+
+	front_left_mtr = 0.0;
+	front_right_mtr = 0.0;
+	back_left_mtr = 0.0;
+	back_right_mtr = 0.0;
+	intake_a_mtr = 0.0;
+	intake_b_mtr = 0.0;
+	catapult_a_mtr = 0.0;
+	catapult_b_mtr = 0.0;
+
+	// intake_a_mtr.set_zero_position(0.0);
+	// intake_b_mtr.set_zero_position(0.0);
+	// intake_a_mtr.move_absolute(0.0, 30);
+	// intake_b_mtr.move_absolute(0.0, 30);
+
+	// front_left_mtr.set
+
+	// front_left_mtr.move_relative(0.0)
+	// front_right_mtr.move_relative(0.0)
+	// back_left_mtr.move_relative(0.0)
+	// back_right_mtr.move_relative(0.0)
+	// intake_a_mtr.move_relative(0.0)
+	// intake_b_mtr.move_relative(0.0)
+	// catapult_a_mtr.move_relative(0.0)
+	// catapult_b_mtr.move_relative(0.0)
+}
 
 /**
  * Runs after initialize(), and before autonomous when connected to the Field
@@ -57,14 +112,48 @@ void autonomous() {
 	pros::Motor back_right_mtr(BACK_RIGHT_MTR_PRT);
 	pros::Motor intake_a_mtr(INTAKE_A_MTR_PRT);
 	pros::Motor intake_b_mtr(INTAKE_B_MTR_PRT);
-	pros::Motor catapult_a_mtr(CATAPULT_A_MTR_PRT);
-	pros::Motor catapult_b_mtr(CATAPULT_B_MTR_PRT);
+	// pros::Motor catapult_a_mtr(CATAPULT_A_MTR_PRT);
+	// pros::Motor catapult_b_mtr(CATAPULT_B_MTR_PRT);
 
-	// front_left_mtr.set
-	// front_left_mtr.set_zero_position(0);
-	// while (front_left_mtr.get_position() < target - margin) {
-		// front_left_mtr.move_relative(target, speed);
-	// }
+	auto driveTime = [&](int32_t leftV, int32_t rightV, uint32_t timeMS) {
+		front_left_mtr = leftV;
+		front_right_mtr = rightV;
+		back_left_mtr = leftV;
+		back_right_mtr = rightV;
+		pros::delay(timeMS);
+		front_left_mtr = 0;
+		front_right_mtr = 0;
+		back_left_mtr = 0;
+		back_right_mtr = 0;
+	};
+
+	driveTime(50,-50, 825); // First turn, less than 90*
+	driveTime(50, 50, 1000); // Forward
+	driveTime(50,-50, 950); // Turn 90*
+	driveTime(50, 50, 1200); // Move forward against roller
+
+	intake_a_mtr = 30;
+	intake_b_mtr = 30;
+	pros::delay(300);
+	intake_a_mtr = 0;
+	intake_b_mtr = 0;
+
+	pros::delay(1500);
+
+	front_left_mtr = 50;
+	back_left_mtr = 50;
+	pros::delay(50);
+
+	intake_a_mtr = -75;
+	intake_b_mtr = -75;
+
+	pros::delay(1500);
+
+	intake_a_mtr = 0.0;
+	intake_b_mtr = 0.0;
+
+	front_left_mtr = 0;
+	back_left_mtr = 0;
 }
 
 /**
@@ -112,27 +201,33 @@ void opcontrol() {
 			intake_b_mtr = INTAKE_SPEED * (int)l2;
 		}
 
+#define CATAPULT_SPEED 127
+#define CATAPULT_SPEED_REV 75
+
 		bool r1 = ctrl.get_digital(DIGITAL_R1);
 		bool r2 = ctrl.get_digital(DIGITAL_R2);
-		bool bumper = pros::c::adi_digital_read(1);
-		if (r1 && !bumper) {
-			catapult_a_mtr = 127;
-			catapult_b_mtr = 127;
-		}
-		else if (r2 && bumper) {
-			catapult_a_mtr = -127;
-			catapult_b_mtr = -127;
+		if (r1) {
+			catapult_a_mtr = -CATAPULT_SPEED_REV;
+			catapult_b_mtr = -CATAPULT_SPEED_REV;
+		} else if (r2) {
+			catapult_a_mtr = CATAPULT_SPEED;
+			catapult_b_mtr = CATAPULT_SPEED;
+		} else {
+			catapult_a_mtr = 20;
+			catapult_b_mtr = 20;
+			catapult_a_mtr.set_brake_mode(pros::motor_brake_mode_e_t::E_MOTOR_BRAKE_HOLD);
+			catapult_b_mtr.set_brake_mode(pros::motor_brake_mode_e_t::E_MOTOR_BRAKE_HOLD);
 		}
 
 		pros::delay(5);
 	}
 
-	while (false) {
+	while (true) {
 		int l_y = ctrl.get_analog(ANALOG_LEFT_Y);
 		int r_y = ctrl.get_analog(ANALOG_RIGHT_Y);
 
-		// catapult_a_mtr = l_y;
-		// catapult_b_mtr = l_y;
+		catapult_a_mtr = l_y;
+		catapult_b_mtr = l_y;
 
 		intake_a_mtr = r_y;
 		intake_b_mtr = r_y;
