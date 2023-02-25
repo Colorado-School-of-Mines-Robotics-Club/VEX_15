@@ -94,6 +94,8 @@ void disabled() {
  */
 void competition_initialize() {}
 
+#define VOLTAGE_MAX 127
+
 /**
  * Runs the user autonomous code. This function will be started in its own task
  * with the default priority and stack size whenever the robot is enabled via
@@ -106,10 +108,14 @@ void competition_initialize() {}
  * from where it left off.
  */
 void autonomous() {
-	pros::Motor front_left_mtr(FRONT_LEFT_MTR_PRT);
-	pros::Motor front_right_mtr(FRONT_RIGHT_MTR_PRT);
-	pros::Motor back_left_mtr(BACK_LEFT_MTR_PRT);
-	pros::Motor back_right_mtr(BACK_RIGHT_MTR_PRT);
+	pros::Motor front_left_mtr(FRONT_LEFT_MTR_PRT, pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
+	front_left_mtr.set_encoder_units(pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
+	pros::Motor front_right_mtr(FRONT_RIGHT_MTR_PRT, pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
+	front_right_mtr.set_encoder_units(pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
+	pros::Motor back_left_mtr(BACK_LEFT_MTR_PRT, pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
+	back_left_mtr.set_encoder_units(pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
+	pros::Motor back_right_mtr(BACK_RIGHT_MTR_PRT, pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
+	back_right_mtr.set_encoder_units(pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
 	pros::Motor intake_a_mtr(INTAKE_A_MTR_PRT);
 	pros::Motor intake_b_mtr(INTAKE_B_MTR_PRT);
 	pros::Motor catapult_a_mtr(CATAPULT_A_MTR_PRT);
@@ -127,18 +133,39 @@ void autonomous() {
 		back_right_mtr = 0;
 	};
 
+#define DIST_MULT 80.0
+
+	auto driveToPos = [](pros::Motor& motor, double targetInches, int32_t velocity, bool resetZero = true) {
+		if (resetZero) motor.set_zero_position(0.0);
+		motor.move_absolute(targetInches * DIST_MULT, velocity);
+	};
+
+	auto withinDist = [](pros::Motor& motor, double targetInches, double marginInches) {
+		return std::abs(targetInches - motor.get_position()) < marginInches;
+	};
+
 	// Drive forward
-	driveTime(50, 50, 500);
-	pros::delay(1000);
+	driveToPos(front_left_mtr,  8.0, 50);
+	driveToPos(back_left_mtr,   8.0, 50);
+	driveToPos(front_right_mtr, 8.0, 50);
+	driveToPos(back_right_mtr,  8.0, 50);
+	pros::delay(5000);
+	driveToPos(front_left_mtr,  0.0, 50, false);
+	driveToPos(back_left_mtr,   0.0, 50, false);
+	driveToPos(front_right_mtr, 0.0, 50, false);
+	driveToPos(back_right_mtr,  0.0, 50, false);
+	pros::delay(5000);
+	return;
 
 	// Launch catapult
-	catapult_a_mtr = 127;
-	catapult_b_mtr = 127;
+	catapult_a_mtr = VOLTAGE_MAX;
+	catapult_b_mtr = VOLTAGE_MAX;
 	pros::delay(2000);
 	catapult_a_mtr = 0;
 	catapult_b_mtr = 0;
 	pros::delay(1500);
 
+	// Drive backward (to start)
 	driveTime(-50, -50, 500);
 	pros::delay(1000);
 
@@ -204,30 +231,26 @@ void opcontrol() {
 		front_right_mtr = r_y;
 		back_right_mtr = r_y;
 
-#define INTAKE_SPEED 127
-#define OUTTAKE_SPEED 127
-
 		bool l1 = ctrl.get_digital(DIGITAL_L1);
 		if (l1) {
-			intake_a_mtr = -OUTTAKE_SPEED;
-			intake_b_mtr = -OUTTAKE_SPEED;
+			intake_a_mtr = -VOLTAGE_MAX;
+			intake_b_mtr = -VOLTAGE_MAX;
 		} else {
 			bool l2 = ctrl.get_digital(DIGITAL_L2);
-			intake_a_mtr = INTAKE_SPEED * (int)l2;
-			intake_b_mtr = INTAKE_SPEED * (int)l2;
+			intake_a_mtr = VOLTAGE_MAX * (int)l2;
+			intake_b_mtr = VOLTAGE_MAX * (int)l2;
 		}
 
-#define CATAPULT_SPEED 127
 #define CATAPULT_SPEED_REV 75
 
 		bool r1 = ctrl.get_digital(DIGITAL_R1);
 		bool r2 = ctrl.get_digital(DIGITAL_R2);
 		if (r1) {
-			catapult_a_mtr = -CATAPULT_SPEED_REV;
-			catapult_b_mtr = -CATAPULT_SPEED_REV;
+			catapult_a_mtr = -VOLTAGE_MAX * 0.6;
+			catapult_b_mtr = -VOLTAGE_MAX * 0.6;
 		} else if (r2) {
-			catapult_a_mtr = CATAPULT_SPEED;
-			catapult_b_mtr = CATAPULT_SPEED;
+			catapult_a_mtr = VOLTAGE_MAX;
+			catapult_b_mtr = VOLTAGE_MAX;
 		} else {
 			catapult_a_mtr = 20;
 			catapult_b_mtr = 20;
