@@ -112,8 +112,8 @@ void autonomous() {
 	pros::Motor back_right_mtr(BACK_RIGHT_MTR_PRT);
 	pros::Motor intake_a_mtr(INTAKE_A_MTR_PRT);
 	pros::Motor intake_b_mtr(INTAKE_B_MTR_PRT);
-	// pros::Motor catapult_a_mtr(CATAPULT_A_MTR_PRT);
-	// pros::Motor catapult_b_mtr(CATAPULT_B_MTR_PRT);
+	pros::Motor catapult_a_mtr(CATAPULT_A_MTR_PRT);
+	pros::Motor catapult_b_mtr(CATAPULT_B_MTR_PRT);
 
 	auto driveTime = [&](int32_t leftV, int32_t rightV, uint32_t timeMS) {
 		front_left_mtr = leftV;
@@ -127,8 +127,23 @@ void autonomous() {
 		back_right_mtr = 0;
 	};
 
+	// Drive forward
+	driveTime(50, 50, 500);
+	pros::delay(1000);
+
+	// Launch catapult
+	catapult_a_mtr = 127;
+	catapult_b_mtr = 127;
+	pros::delay(2000);
+	catapult_a_mtr = 0;
+	catapult_b_mtr = 0;
+	pros::delay(1500);
+
+	driveTime(-50, -50, 500);
+	pros::delay(1000);
+
 	driveTime(50,-50, 825); // First turn, less than 90*
-	driveTime(50, 50, 1000); // Forward
+	driveTime(50, 50, 1500); // Forward
 	driveTime(50,-50, 950); // Turn 90*
 	driveTime(50, 50, 1200); // Move forward against roller
 
@@ -139,16 +154,17 @@ void autonomous() {
 	intake_b_mtr = 0;
 
 	pros::delay(1500);
-
+	// Move Forward against roller
 	front_left_mtr = 50;
 	back_left_mtr = 50;
-	pros::delay(50);
+	pros::delay(500);
 
-	intake_a_mtr = -75;
-	intake_b_mtr = -75;
+	// Spin roller
+	intake_a_mtr = 100;
+	intake_b_mtr = 100;
 
-	pros::delay(1500);
-
+	pros::delay(200);
+	// Stop
 	intake_a_mtr = 0.0;
 	intake_b_mtr = 0.0;
 
@@ -222,7 +238,7 @@ void opcontrol() {
 		pros::delay(5);
 	}
 
-	while (true) {
+	while (false) {
 		int l_y = ctrl.get_analog(ANALOG_LEFT_Y);
 		int r_y = ctrl.get_analog(ANALOG_RIGHT_Y);
 

@@ -1,7 +1,7 @@
 {
   "py/object": "pros.conductor.project.Project",
   "py/state": {
-    "project_name": "dababy",
+    "project_name": "ORDGR_15",
     "target": "v5",
     "templates": {
       "kernel": {
