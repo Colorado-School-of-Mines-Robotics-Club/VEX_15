@@ -204,6 +204,7 @@ void opcontrol() {
 		front_right_mtr = r_y;
 		back_right_mtr = r_y;
 
+// #define INTAKE_SPEED (int)(127.0 * 0.75)
 #define INTAKE_SPEED 127
 #define OUTTAKE_SPEED 127
 
