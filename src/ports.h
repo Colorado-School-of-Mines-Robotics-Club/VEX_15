@@ -6,3 +6,6 @@
 #define INTAKE_B_MTR_PRT -13
 #define CATAPULT_A_MTR_PRT 19
 #define CATAPULT_B_MTR_PRT 18
+
+#define IMU_PORT 1
+#define CATAPULT_LIMIT_PORT 0
