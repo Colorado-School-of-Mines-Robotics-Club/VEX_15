@@ -9,10 +9,11 @@ pros::Controller ctrl(pros::E_CONTROLLER_MASTER);
 pros::Imu imu(IMU_PORT);
 pros::ADIDigitalIn catapult_switch(CATAPULT_LIMIT_PORT);
 
-pros::Motor_Group drive_group{ pros::Motor(FRONT_LEFT_MTR_PRT),
-			       pros::Motor(BACK_LEFT_MTR_PRT),
-			       pros::Motor(FRONT_RIGHT_MTR_PRT),
-			       pros::Motor(BACK_RIGHT_MTR_PRT) };
+pros::Motor_Group drive_group{
+	pros::Motor(FRONT_LEFT_MTR_PRT),   pros::Motor(MIDDLE_LEFT_MTR_PRT),
+	pros::Motor(BACK_LEFT_MTR_PRT),	   pros::Motor(FRONT_RIGHT_MTR_PRT),
+	pros::Motor(MIDDLE_RIGHT_MTR_PRT), pros::Motor(BACK_RIGHT_MTR_PRT)
+};
 pros::Motor_Group intake_group{ pros::Motor(INTAKE_A_MTR_PRT),
 				pros::Motor(INTAKE_B_MTR_PRT) };
 pros::Motor_Group catapult_group{ pros::Motor(CATAPULT_A_MTR_PRT),
@@ -37,16 +38,19 @@ void on_center_button()
 void initialize()
 {
 	pros::lcd::initialize();
+
 	drive_group.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
 	drive_group.set_encoder_units(
 		pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
 
 	catapult_group.set_brake_modes(
 		pros::motor_brake_mode_e_t::E_MOTOR_BRAKE_HOLD);
+	catapult_group.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_RED);
 
-	pros::lcd::set_text(0, "Resetting IMU");
+	ctrl.clear_line(0);
+	ctrl.set_text(0, 0, "Resetting IMU");
 	imu.reset(true);
-	pros::lcd::set_text(0, "IMU has been reset");
+	ctrl.set_text(0, 0, "IMU has been reset");
 }
 
 /**
@@ -131,23 +135,31 @@ void opcontrol()
 		int r_y = ctrl.get_analog(ANALOG_RIGHT_Y);
 		drive_group[0] = l_y;
 		drive_group[1] = l_y;
-		drive_group[2] = r_y;
+		drive_group[2] = l_y;
 		drive_group[3] = r_y;
+		drive_group[4] = r_y;
+		drive_group[5] = r_y;
 
 		bool l1 = ctrl.get_digital(DIGITAL_L1);
 		if (l1)
 			intake_group = -VOLTAGE_MAX;
 		else
-			intake_group =
-				VOLTAGE_MAX * (int)ctrl.get_digital(DIGITAL_L2);
+			intake_group = VOLTAGE_MAX *
+				       (int)ctrl.get_digital(DIGITAL_L2) *
+				       (int)catapult_switch.get_value();
 
 		bool r1 = ctrl.get_digital(DIGITAL_R1);
 		bool r2 = ctrl.get_digital(DIGITAL_R2);
-		if (r1)
-			catapult_group = -VOLTAGE_MAX * 0.6;
-		else if (r2)
+		if (r1) {
+			catapult_group = -VOLTAGE_MAX * 0.3;
+		} else if (!catapult_switch.get_value()) {
+			catapult_group.move_velocity(60);
+		} else if (!r2 && catapult_switch.get_value()) {
+			catapult_group.brake();
+		} else if (r2 && catapult_switch.get_value()) {
 			catapult_group = VOLTAGE_MAX;
-		else {
+			pros::delay(200);
+		} else if (!r2) {
 			catapult_group.brake();
 		}
 
