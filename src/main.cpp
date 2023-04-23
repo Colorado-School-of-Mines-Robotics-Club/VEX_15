@@ -41,6 +41,8 @@ void on_center_button()
 void initialize()
 {
 	pros::lcd::initialize();
+	imu.reset(true);
+	endgame_motor = -25;
 
 	left_drive_group.set_gearing(
 		pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
@@ -55,10 +57,12 @@ void initialize()
 		pros::motor_brake_mode_e_t::E_MOTOR_BRAKE_HOLD);
 	catapult_group.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_RED);
 
-	ctrl.clear_line(0);
-	ctrl.set_text(0, 0, "Resetting IMU");
-	imu.reset(true);
-	ctrl.set_text(0, 0, "IMU has been reset");
+	pros::delay(1000);
+	endgame_motor.set_zero_position(0);
+	endgame_motor.move_absolute(100, 25);
+
+	while (imu.is_calibrating()) {
+	}
 }
 
 /**
@@ -127,6 +131,8 @@ void autonomous()
 	// pros::delay(1500);
 }
 
+#define INTAKE_SPEED_PERCENT 1.0
+
 /**
  * Runs the operator control code. This function will be started in its own
  * task with the default priority and stack size whenever the robot is enabled
@@ -151,10 +157,12 @@ void opcontrol()
 		bool l1 = ctrl.get_digital(DIGITAL_L1);
 		if (l1)
 			intake_group = -VOLTAGE_MAX;
+		else if (ctrl.get_digital(DIGITAL_L2) &&
+			 catapult_switch.get_value())
+			intake_group = (int)((double)VOLTAGE_MAX *
+					     INTAKE_SPEED_PERCENT);
 		else
-			intake_group = VOLTAGE_MAX *
-				       (int)ctrl.get_digital(DIGITAL_L2) *
-				       (int)catapult_switch.get_value();
+			intake_group = 0;
 
 		bool r1 = ctrl.get_digital(DIGITAL_R1);
 		bool r2 = ctrl.get_digital(DIGITAL_R2);
