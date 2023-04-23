@@ -9,22 +9,25 @@ pros::Controller ctrl(pros::E_CONTROLLER_MASTER);
 pros::Imu imu(IMU_PORT);
 pros::ADIDigitalIn catapult_switch(CATAPULT_LIMIT_PORT);
 
-pros::Motor_Group drive_group{
-	pros::Motor(FRONT_LEFT_MTR_PRT),   pros::Motor(MIDDLE_LEFT_MTR_PRT),
-	pros::Motor(BACK_LEFT_MTR_PRT),	   pros::Motor(FRONT_RIGHT_MTR_PRT),
-	pros::Motor(MIDDLE_RIGHT_MTR_PRT), pros::Motor(BACK_RIGHT_MTR_PRT)
-};
+pros::Motor_Group left_drive_group{ pros::Motor(FRONT_LEFT_MTR_PRT),
+				    pros::Motor(MIDDLE_LEFT_MTR_PRT),
+				    pros::Motor(BACK_LEFT_MTR_PRT) };
+pros::Motor_Group right_drive_group{ pros::Motor(FRONT_RIGHT_MTR_PRT),
+				     pros::Motor(MIDDLE_RIGHT_MTR_PRT),
+				     pros::Motor(BACK_RIGHT_MTR_PRT) };
 pros::Motor_Group intake_group{ pros::Motor(INTAKE_A_MTR_PRT),
 				pros::Motor(INTAKE_B_MTR_PRT) };
 pros::Motor_Group catapult_group{ pros::Motor(CATAPULT_A_MTR_PRT),
 				  pros::Motor(CATAPULT_B_MTR_PRT) };
+pros::Motor endgame_motor(ENDGAME_MTR_PTR);
 
 /**
  * A callback function for LLEMU's center button.
  */
 void on_center_button()
 {
-	drive_group = 0;
+	left_drive_group = 0;
+	right_drive_group = 0;
 	intake_group = 0;
 	catapult_group = 0;
 }
@@ -39,8 +42,13 @@ void initialize()
 {
 	pros::lcd::initialize();
 
-	drive_group.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
-	drive_group.set_encoder_units(
+	left_drive_group.set_gearing(
+		pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
+	left_drive_group.set_encoder_units(
+		pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
+	right_drive_group.set_gearing(
+		pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
+	right_drive_group.set_encoder_units(
 		pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
 
 	catapult_group.set_brake_modes(
@@ -60,7 +68,8 @@ void initialize()
  */
 void disabled()
 {
-	drive_group = 0;
+	left_drive_group = 0;
+	right_drive_group = 0;
 	intake_group = 0;
 	catapult_group = 0;
 }
@@ -89,8 +98,8 @@ void competition_initialize()
  * for non-competition testing purposes.
  *
  * If the robot is disabled or communications is lost, the autonomous task
- * will be stopped. Re-enabling the robot will restart the task, not re-start it
- * from where it left off.
+ * will be stopped. Re-enabling the robot will restart the task, not re-start
+ * it from where it left off.
  */
 void autonomous()
 {
@@ -100,12 +109,15 @@ void autonomous()
 		       marginInches;
 	};
 
-	drive_group.set_zero_position(0.0);
+	left_drive_group.set_zero_position(0.0);
+	right_drive_group.set_zero_position(0.0);
 	// Drive forward
-	drive_group.move_absolute(8.0 * IN_TO_EN_MULT, 50);
+	left_drive_group.move_absolute(8.0 * IN_TO_EN_MULT, 50);
+	right_drive_group.move_absolute(8.0 * IN_TO_EN_MULT, 50);
 	pros::delay(5000);
 	// Return to beginning
-	drive_group.move_absolute(0.0, 50);
+	left_drive_group.move_absolute(0.0, 50);
+	right_drive_group.move_absolute(0.0, 50);
 	pros::delay(5000);
 
 	// Launch catapult
@@ -116,29 +128,25 @@ void autonomous()
 }
 
 /**
- * Runs the operator control code. This function will be started in its own task
- * with the default priority and stack size whenever the robot is enabled via
- * the Field Management System or the VEX Competition Switch in the operator
- * control mode.
+ * Runs the operator control code. This function will be started in its own
+ * task with the default priority and stack size whenever the robot is enabled
+ * via the Field Management System or the VEX Competition Switch in the
+ * operator control mode.
  *
  * If no competition control is connected, this function will run immediately
  * following initialize().
  *
  * If the robot is disabled or communications is lost, the
- * operator control task will be stopped. Re-enabling the robot will restart the
- * task, not resume it from where it left off.
+ * operator control task will be stopped. Re-enabling the robot will restart
+ * the task, not resume it from where it left off.
  */
 void opcontrol()
 {
 	while (true) {
 		int l_y = ctrl.get_analog(ANALOG_LEFT_Y);
 		int r_y = ctrl.get_analog(ANALOG_RIGHT_Y);
-		drive_group[0] = l_y;
-		drive_group[1] = l_y;
-		drive_group[2] = l_y;
-		drive_group[3] = r_y;
-		drive_group[4] = r_y;
-		drive_group[5] = r_y;
+		left_drive_group = l_y;
+		right_drive_group = r_y;
 
 		bool l1 = ctrl.get_digital(DIGITAL_L1);
 		if (l1)
@@ -161,6 +169,15 @@ void opcontrol()
 			pros::delay(200);
 		} else if (!r2) {
 			catapult_group.brake();
+		}
+
+		bool ar = ctrl.get_digital(pros::E_CONTROLLER_DIGITAL_LEFT) &&
+			  ctrl.get_digital(pros::E_CONTROLLER_DIGITAL_A);
+
+		if (ar) {
+			endgame_motor.move_absolute(400, 127);
+		} else {
+			endgame_motor.move_absolute(100, 100);
 		}
 
 		pros::delay(5);
