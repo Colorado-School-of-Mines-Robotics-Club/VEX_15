@@ -1,6 +1,7 @@
 #include "main.h"
 
 #include <stdlib.h>
+#include <float.h>
 
 #include "ports.h"
 
@@ -32,17 +33,9 @@ void on_center_button()
 	catapult_group = 0;
 }
 
-/**
- * Runs initialization code. This occurs as soon as the program is started.
- *
- * All other competition modes are blocked by initialize; it is recommended
- * to keep execution time for this mode under a few seconds.
- */
-void initialize()
+void initCommon()
 {
 	pros::lcd::initialize();
-	imu.reset(true);
-	endgame_motor = -25;
 
 	left_drive_group.set_gearing(
 		pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
@@ -56,6 +49,20 @@ void initialize()
 	catapult_group.set_brake_modes(
 		pros::motor_brake_mode_e_t::E_MOTOR_BRAKE_HOLD);
 	catapult_group.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_RED);
+}
+
+/**
+ * Runs initialization code. This occurs as soon as the program is started.
+ *
+ * All other competition modes are blocked by initialize; it is recommended
+ * to keep execution time for this mode under a few seconds.
+ */
+void initialize()
+{
+	imu.reset(false);
+	endgame_motor = -25;
+
+	initCommon();
 
 	pros::delay(1000);
 	endgame_motor.set_zero_position(0);
@@ -94,6 +101,23 @@ void competition_initialize()
 #define VOLTAGE_MAX 127
 #define IN_TO_EN_MULT 80.0
 
+double dAbs(double i)
+{
+	if (i < 0.0) {
+		return -i;
+	}
+	return i;
+}
+
+double limitValue(double d, double max, double min)
+{
+	if (d > max)
+		return max;
+	else if (d < min)
+		return min;
+	return d;
+}
+
 /**
  * Runs the user autonomous code. This function will be started in its own task
  * with the default priority and stack size whenever the robot is enabled via
@@ -107,28 +131,84 @@ void competition_initialize()
  */
 void autonomous()
 {
-	auto withinDist = [](pros::Motor &motor, double targetInches,
-			     double marginInches) {
-		return std::abs(targetInches - motor.get_position()) <
-		       marginInches;
+	initCommon();
+	imu.reset(true);
+
+	auto turnToAngle = [&](double maxVelocity, double minVelocity,
+			       double targetDegrees, double targetError = 2.0,
+			       double slowDownVelocity = 10.0) {
+		while (true) {
+			double heading = imu.get_heading();
+			double error = dAbs(targetDegrees - heading);
+
+			double velocity = limitValue(
+				(double)maxVelocity *
+					limitValue(error / slowDownVelocity,
+						   1.0, 0.0),
+				DBL_MAX, minVelocity);
+			left_drive_group.move_velocity(velocity);
+			right_drive_group.move_velocity(-velocity);
+
+			if (error < targetError)
+				break;
+		}
+
+		left_drive_group = 0;
+		right_drive_group = 0;
+
+		left_drive_group.brake();
+		right_drive_group.brake();
 	};
 
 	left_drive_group.set_zero_position(0.0);
 	right_drive_group.set_zero_position(0.0);
 	// Drive forward
-	left_drive_group.move_absolute(8.0 * IN_TO_EN_MULT, 50);
-	right_drive_group.move_absolute(8.0 * IN_TO_EN_MULT, 50);
-	pros::delay(5000);
-	// Return to beginning
-	left_drive_group.move_absolute(0.0, 50);
-	right_drive_group.move_absolute(0.0, 50);
-	pros::delay(5000);
+	left_drive_group.move_absolute(2.0 * IN_TO_EN_MULT, 40);
+	right_drive_group.move_absolute(2.0 * IN_TO_EN_MULT, 40);
+	pros::delay(500);
+	left_drive_group.move_absolute(10.0 * IN_TO_EN_MULT, 75);
+	right_drive_group.move_absolute(10.0 * IN_TO_EN_MULT, 75);
+	pros::delay(4500);
+
+	turnToAngle(35.0, 10.0, 12.0);
+	pros::delay(500);
 
 	// Launch catapult
-	// catapult_group = VOLTAGE_MAX;
-	// pros::delay(2000);
-	// catapult_group = 0;
-	// pros::delay(1500);
+	catapult_group = VOLTAGE_MAX;
+	pros::delay(1250);
+	catapult_group = 0;
+	pros::delay(1500);
+
+	turnToAngle(-35.0, -10.0, 0.0);
+	pros::delay(500);
+
+	left_drive_group.move_absolute(5.0 * IN_TO_EN_MULT, 75);
+	right_drive_group.move_absolute(5.0 * IN_TO_EN_MULT, 75);
+	pros::delay(2500);
+
+	// Return to middle
+	turnToAngle(35.0, 10.0, 90.0);
+	left_drive_group.set_zero_position(0.0);
+	right_drive_group.set_zero_position(0.0);
+	left_drive_group.move_absolute(3.0 * IN_TO_EN_MULT, 50);
+	right_drive_group.move_absolute(3.0 * IN_TO_EN_MULT, 50);
+	pros::delay(1500);
+
+	// Move diagonal
+	turnToAngle(35.0, 10.0, 135.0);
+	left_drive_group.set_zero_position(0.0);
+	right_drive_group.set_zero_position(0.0);
+	left_drive_group.move_absolute(5.0 * IN_TO_EN_MULT, 50);
+	right_drive_group.move_absolute(5.0 * IN_TO_EN_MULT, 50);
+	pros::delay(1500);
+
+	// Move down close to roller
+	turnToAngle(35.0, 10.0, 180.0);
+	left_drive_group.set_zero_position(0.0);
+	right_drive_group.set_zero_position(0.0);
+	left_drive_group.move_absolute(4.0 * IN_TO_EN_MULT, 50);
+	right_drive_group.move_absolute(4.0 * IN_TO_EN_MULT, 50);
+	pros::delay(1500);
 }
 
 #define INTAKE_SPEED_PERCENT 1.0
