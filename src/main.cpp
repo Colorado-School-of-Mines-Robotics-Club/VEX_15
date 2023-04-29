@@ -66,7 +66,6 @@ void initialize()
 
 	pros::delay(1000);
 	endgame_motor.set_zero_position(0);
-	endgame_motor.move_absolute(100, 25);
 
 	while (imu.is_calibrating()) {
 	}
@@ -160,16 +159,21 @@ void autonomous()
 		right_drive_group.brake();
 	};
 
+#ifndef N
+
+	// Pull back catapult
+	catapult_group.move_velocity(60);
+	while (!catapult_switch.get_value()) {
+	}
+	catapult_group.brake();
+	// Drive forward to launch point
 	left_drive_group.set_zero_position(0.0);
 	right_drive_group.set_zero_position(0.0);
-	// Drive forward
-	left_drive_group.move_absolute(2.0 * IN_TO_EN_MULT, 40);
-	right_drive_group.move_absolute(2.0 * IN_TO_EN_MULT, 40);
-	pros::delay(500);
 	left_drive_group.move_absolute(10.0 * IN_TO_EN_MULT, 75);
 	right_drive_group.move_absolute(10.0 * IN_TO_EN_MULT, 75);
 	pros::delay(4500);
 
+	// Turn to target
 	turnToAngle(35.0, 10.0, 12.0);
 	pros::delay(500);
 
@@ -180,35 +184,57 @@ void autonomous()
 	pros::delay(1500);
 
 	turnToAngle(-35.0, -10.0, 0.0);
-	pros::delay(500);
+	pros::delay(750);
 
+	// Return to middle
 	left_drive_group.move_absolute(5.0 * IN_TO_EN_MULT, 75);
 	right_drive_group.move_absolute(5.0 * IN_TO_EN_MULT, 75);
 	pros::delay(2500);
 
-	// Return to middle
 	turnToAngle(35.0, 10.0, 90.0);
+	pros::delay(500);
 	left_drive_group.set_zero_position(0.0);
 	right_drive_group.set_zero_position(0.0);
-	left_drive_group.move_absolute(3.0 * IN_TO_EN_MULT, 50);
-	right_drive_group.move_absolute(3.0 * IN_TO_EN_MULT, 50);
+	left_drive_group.move_absolute(4.0 * IN_TO_EN_MULT, 50);
+	right_drive_group.move_absolute(4.0 * IN_TO_EN_MULT, 50);
 	pros::delay(1500);
 
 	// Move diagonal
 	turnToAngle(35.0, 10.0, 135.0);
+	pros::delay(500);
 	left_drive_group.set_zero_position(0.0);
 	right_drive_group.set_zero_position(0.0);
 	left_drive_group.move_absolute(5.0 * IN_TO_EN_MULT, 50);
 	right_drive_group.move_absolute(5.0 * IN_TO_EN_MULT, 50);
 	pros::delay(1500);
 
-	// Move down close to roller
+	// Turn towards roller
 	turnToAngle(35.0, 10.0, 180.0);
+	// Drop intake
+	intake_group = -50;
+	pros::delay(200);
+	intake_group = 0;
+	pros::delay(200);
+	// Move down close to roller
 	left_drive_group.set_zero_position(0.0);
 	right_drive_group.set_zero_position(0.0);
-	left_drive_group.move_absolute(4.0 * IN_TO_EN_MULT, 50);
-	right_drive_group.move_absolute(4.0 * IN_TO_EN_MULT, 50);
+	left_drive_group.move_absolute(1.0 * IN_TO_EN_MULT, 50);
+	right_drive_group.move_absolute(1.0 * IN_TO_EN_MULT, 50);
+	pros::delay(1000);
+
+#endif
+
+	// Move against roller
+	left_drive_group = 50;
 	pros::delay(1500);
+	// Spin roller
+	intake_group = 100;
+	pros::delay(200);
+
+	// All stop
+	left_drive_group = 0;
+	right_drive_group = 0;
+	intake_group = 0;
 }
 
 #define INTAKE_SPEED_PERCENT 1.0
@@ -265,7 +291,7 @@ void opcontrol()
 		if (ar) {
 			endgame_motor.move_absolute(400, 127);
 		} else {
-			endgame_motor.move_absolute(100, 100);
+			endgame_motor.move_absolute(0, 100);
 		}
 
 		pros::delay(5);
