@@ -1,12 +1,13 @@
 #include "main.h"
 
-#include <stdlib.h>
-#include <float.h>
-
 #include "ports.h"
+#include "pros/misc.h"
+#include "pros/motors.h"
+#include "pros/rtos.hpp"
 #include "timer.h"
 
 #define MAX_VOLTAGE 127
+#define MAX_RPM 200
 
 pros::Controller ctrl(pros::E_CONTROLLER_MASTER);
 
@@ -18,6 +19,19 @@ pros::Motor_Group catapult_group(CATAPULT_DRIVE_PORTS);
 
 pros::Motor catapult_block(CATAPULT_STOPPER_PORT);
 
+enum class CatapultDeployStatus {
+	NotDeploying,
+	RemoveBlock,
+	Home,
+	PullBackFirst,
+	PlaceBlock,
+	PullBackSecond,
+};
+
+CatapultDeployStatus catapult_deploy_status =
+	CatapultDeployStatus::NotDeploying;
+Timer deploy_timer = Timer();
+
 /**
  * A callback function for LLEMU's center button.
  */
@@ -27,23 +41,65 @@ void on_center_button()
 	right_drive_group = 0;
 }
 
+void handle_catapult_deploy()
+{
+	switch (catapult_deploy_status) {
+	case CatapultDeployStatus::NotDeploying:
+		break;
+	case CatapultDeployStatus::RemoveBlock:
+		catapult_group.brake();
+		catapult_block.move(MAX_VOLTAGE);
+		if (deploy_timer.GetElapsedTime().AsMilliseconds() >= 500.0) {
+			catapult_deploy_status = CatapultDeployStatus::Home;
+			deploy_timer.Restart();
+		}
+		break;
+	case CatapultDeployStatus::Home:
+		catapult_block.move(0);
+		catapult_group.move(-75);
+		if (deploy_timer.GetElapsedTime().AsMilliseconds() < 100)
+			break;
+		if (catapult_group.get_actual_velocities()[0] > -10.0) {
+			catapult_deploy_status =
+				CatapultDeployStatus::PullBackFirst;
+			catapult_group.brake();
+			catapult_group.tare_position();
+		}
+		break;
+	case CatapultDeployStatus::PullBackFirst:
+		catapult_group.move_absolute(2600, MAX_RPM);
+		if (catapult_group.get_positions()[0] >= 2600) {
+			catapult_deploy_status =
+				CatapultDeployStatus::PlaceBlock;
+			deploy_timer.Restart();
+		}
+		break;
+	case CatapultDeployStatus::PlaceBlock:
+		catapult_block.move(-MAX_VOLTAGE);
+		if (deploy_timer.GetElapsedTime().AsMilliseconds() >= 500.0 ||
+		    deploy_timer.GetElapsedTime().AsSeconds() > 5.0) {
+			catapult_deploy_status =
+				CatapultDeployStatus::PullBackSecond;
+			deploy_timer.Restart();
+		}
+		break;
+	case CatapultDeployStatus::PullBackSecond:
+		catapult_block.brake();
+		catapult_group.move_absolute(3000, MAX_RPM);
+		if (catapult_group.get_positions()[0] >= 3000 ||
+		    deploy_timer.GetElapsedTime().AsSeconds() > 2.0) {
+			catapult_deploy_status =
+				CatapultDeployStatus::NotDeploying;
+			catapult_group.brake();
+		}
+		break;
+	}
+}
+
 void deploy_catapult()
 {
-	catapult_group.brake();
-	catapult_block.move(MAX_VOLTAGE);
-	pros::delay(100);
-	catapult_block.move(0);
-	catapult_group.move(-20);
-	while (catapult_group.get_actual_velocities()[0] > 5.0) {
-	}
-
-	catapult_group.brake();
-	catapult_group.set_zero_position(0);
-	catapult_group.move_absolute(35, MAX_VOLTAGE);
-	pros::delay(1000);
-	catapult_block.move(-MAX_VOLTAGE);
-	pros::delay(500);
-	catapult_block.brake();
+	catapult_deploy_status = CatapultDeployStatus::RemoveBlock;
+	deploy_timer.Restart();
 }
 
 void initCommon()
@@ -72,14 +128,16 @@ void initCommon()
 	catapult_group.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
 	catapult_group.set_encoder_units(
 		pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
+	catapult_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 
 	catapult_block.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
 	catapult_block.set_encoder_units(
 		pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
+	catapult_block.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 
 	intake_extension_group.move(-50);
 	pros::delay(1000);
-	intake_extension_group.set_zero_position(0.0);
+	intake_extension_group.tare_position();
 	pros::delay(10);
 	intake_extension_group.move(0);
 }
@@ -93,6 +151,7 @@ void initCommon()
 void initialize()
 {
 	initCommon();
+	deploy_catapult();
 }
 
 /**
@@ -158,7 +217,8 @@ void autonomous()
 	right_drive_group = 0;
 }
 
-std::unique_ptr<Timer> a_button_timer = std::make_unique<Timer>();
+std::unique_ptr<Timer> intake_extension_toggle_timer =
+	std::make_unique<Timer>();
 bool is_intake_extended = false;
 
 bool catapult_button_timer_running = false;
@@ -180,51 +240,67 @@ std::unique_ptr<Timer> catapult_button_timer = std::make_unique<Timer>();
 void opcontrol()
 {
 	while (true) {
+		handle_catapult_deploy();
+
 		int l_stick_y = ctrl.get_analog(ANALOG_LEFT_Y);
 		int r_stick_y = ctrl.get_analog(ANALOG_RIGHT_Y);
 		left_drive_group = l_stick_y;
 		right_drive_group = r_stick_y;
 
-		int a_button = ctrl.get_digital(DIGITAL_R1);
-		if (a_button_timer->GetElapsedTime().AsMilliseconds() > 100) {
+		int right_trigger_upper = ctrl.get_digital(DIGITAL_R1);
+		if (right_trigger_upper &&
+		    intake_extension_toggle_timer->GetElapsedTime()
+				    .AsMilliseconds() > 200) {
 			is_intake_extended = !is_intake_extended;
-			a_button_timer->Restart();
+			intake_extension_toggle_timer->Restart();
 		}
 
 		if (is_intake_extended) {
-			intake_extension_group.move_absolute(170, MAX_VOLTAGE);
+			intake_extension_group.move_absolute(170, MAX_RPM);
 		} else {
-			intake_extension_group.move_absolute(0, MAX_VOLTAGE);
+			intake_extension_group.move_absolute(60, MAX_RPM);
 		}
 
 		// bool right_trigger_upper = ctrl.get_digital(DIGITAL_R1);
 		bool left_trigger_lower = ctrl.get_digital(DIGITAL_L2);
 		bool left_trigger_upper = ctrl.get_digital(DIGITAL_L1);
 		if (left_trigger_lower) {
-			intake_spin_group = MAX_VOLTAGE;
+			intake_spin_group.move(MAX_VOLTAGE);
 		} else if (left_trigger_upper) {
-			intake_spin_group = -MAX_VOLTAGE;
+			intake_spin_group.move(-MAX_VOLTAGE);
 		} else {
 			intake_spin_group = 0;
 		}
 
 		// Catapult controls:
-		bool right_trigger_lower = ctrl.get_digital(DIGITAL_R2);
-		if (right_trigger_lower) {
-			catapult_group.move(-MAX_VOLTAGE);
-		}
-
-		bool back_arrow_button = ctrl.get_digital(DIGITAL_DOWN);
-		if (back_arrow_button) {
-			if (catapult_button_timer_running == false) {
-				catapult_button_timer->Restart();
-				catapult_button_timer_running = true;
-			} else if (catapult_button_timer->GetElapsedTime()
-					   .AsMilliseconds() > 100.0) {
-				deploy_catapult();
+		if (catapult_deploy_status ==
+		    CatapultDeployStatus::NotDeploying) {
+			bool right_trigger_lower = ctrl.get_digital(DIGITAL_R2);
+			bool up_arrow_button = ctrl.get_digital(DIGITAL_UP);
+			if (up_arrow_button) {
+				catapult_block.move(MAX_VOLTAGE);
+				catapult_group.move(MAX_VOLTAGE);
+			} else if (right_trigger_lower) {
+				catapult_group.move(MAX_VOLTAGE);
+				catapult_block.brake();
+			} else {
+				catapult_group.brake();
+				catapult_block.brake();
 			}
-		} else {
-			catapult_button_timer_running = false;
+
+			bool down_arrow_button = ctrl.get_digital(DIGITAL_DOWN);
+			if (down_arrow_button) {
+				if (catapult_button_timer_running == false) {
+					catapult_button_timer->Restart();
+					catapult_button_timer_running = true;
+				} else if (catapult_button_timer
+						   ->GetElapsedTime()
+						   .AsMilliseconds() > 250.0) {
+					deploy_catapult();
+				}
+			} else {
+				catapult_button_timer_running = false;
+			}
 		}
 
 		pros::delay(5);
