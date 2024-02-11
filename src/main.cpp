@@ -197,6 +197,18 @@ double limit_value(double d, double max, double min)
 	return d;
 }
 
+enum class AutonomousStep {
+	MoveBackStart,
+	ExtendIntake,
+	RetractIntake,
+	Done,
+};
+
+#define INTAKE_EXTENDED_POSITION 170
+#define INTAKE_RETRACTED_POSITION 60
+
+#define DRIVE_UNITS_PER_INCH 27.46290005363848
+
 /**
  * Runs the user autonomous code. This function will be started in its own task
  * with the default priority and stack size whenever the robot is enabled via
@@ -212,9 +224,65 @@ void autonomous()
 {
 	initCommon();
 
-	// All stop
-	left_drive_group = 0;
-	right_drive_group = 0;
+	Timer auto_change_timer;
+	AutonomousStep sequence_step = AutonomousStep::MoveBackStart;
+
+	left_drive_group.tare_position();
+	right_drive_group.tare_position();
+
+	bool running_auto = true;
+	while (running_auto) {
+		handle_catapult_deploy();
+
+		switch (sequence_step) {
+		case AutonomousStep::MoveBackStart:
+#define MOVE_BACK_START_DISTANCE -DRIVE_UNITS_PER_INCH * 2
+			left_drive_group.move_absolute(MOVE_BACK_START_DISTANCE,
+						       MAX_RPM / 4);
+			right_drive_group.move_absolute(
+				MOVE_BACK_START_DISTANCE, MAX_RPM / 4);
+			if (left_drive_group.get_positions()[0] <
+			    MOVE_BACK_START_DISTANCE + 2) {
+				auto_change_timer.Restart();
+				sequence_step = AutonomousStep::ExtendIntake;
+			}
+			break;
+		case AutonomousStep::ExtendIntake:
+			left_drive_group.brake();
+			right_drive_group.brake();
+			intake_extension_group.move_absolute(
+				INTAKE_EXTENDED_POSITION, MAX_RPM / 2);
+			intake_spin_group.move(-MAX_VOLTAGE);
+			// left_drive_group.move(30);
+			// right_drive_group.move(30);
+			if (auto_change_timer.GetElapsedTime().AsMilliseconds() >
+			    1000) {
+				auto_change_timer.Restart();
+				sequence_step = AutonomousStep::RetractIntake;
+			}
+			break;
+		case AutonomousStep::RetractIntake:
+			intake_extension_group.move_absolute(
+				INTAKE_RETRACTED_POSITION, MAX_RPM);
+			// left_drive_group.move(0);
+			// right_drive_group.move(0);
+			if (auto_change_timer.GetElapsedTime().AsMilliseconds() >
+			    500) {
+				auto_change_timer.Restart();
+				sequence_step = AutonomousStep::Done;
+			}
+			break;
+		case AutonomousStep::Done:
+			running_auto = false;
+			left_drive_group = 0;
+			right_drive_group = 0;
+			catapult_group = 0;
+			intake_spin_group = 0;
+			break;
+		}
+
+		pros::delay(5);
+	}
 }
 
 std::unique_ptr<Timer> intake_extension_toggle_timer =
@@ -256,17 +324,19 @@ void opcontrol()
 		}
 
 		if (is_intake_extended) {
-			intake_extension_group.move_absolute(170, MAX_RPM);
+			intake_extension_group.move_absolute(
+				INTAKE_EXTENDED_POSITION, MAX_RPM);
 		} else {
-			intake_extension_group.move_absolute(60, MAX_RPM);
+			intake_extension_group.move_absolute(
+				INTAKE_RETRACTED_POSITION, MAX_RPM);
 		}
 
 		// bool right_trigger_upper = ctrl.get_digital(DIGITAL_R1);
-		bool left_trigger_lower = ctrl.get_digital(DIGITAL_L2);
-		bool left_trigger_upper = ctrl.get_digital(DIGITAL_L1);
-		if (left_trigger_lower) {
+		bool do_intake = ctrl.get_digital(DIGITAL_L2);
+		bool do_outtake = ctrl.get_digital(DIGITAL_L1);
+		if (do_intake) {
 			intake_spin_group.move(MAX_VOLTAGE);
-		} else if (left_trigger_upper) {
+		} else if (do_outtake) {
 			intake_spin_group.move(-MAX_VOLTAGE);
 		} else {
 			intake_spin_group = 0;
@@ -275,12 +345,12 @@ void opcontrol()
 		// Catapult controls:
 		if (catapult_deploy_status ==
 		    CatapultDeployStatus::NotDeploying) {
-			bool right_trigger_lower = ctrl.get_digital(DIGITAL_R2);
-			bool up_arrow_button = ctrl.get_digital(DIGITAL_UP);
-			if (up_arrow_button) {
+			bool do_fire_catapult = ctrl.get_digital(DIGITAL_R2);
+			bool do_collapse_catapult = ctrl.get_digital(DIGITAL_B);
+			if (do_collapse_catapult) {
 				catapult_block.move(MAX_VOLTAGE);
 				catapult_group.move(MAX_VOLTAGE);
-			} else if (right_trigger_lower) {
+			} else if (do_fire_catapult) {
 				catapult_group.move(MAX_VOLTAGE);
 				catapult_block.brake();
 			} else {
@@ -288,8 +358,9 @@ void opcontrol()
 				catapult_block.brake();
 			}
 
-			bool down_arrow_button = ctrl.get_digital(DIGITAL_DOWN);
-			if (down_arrow_button) {
+			bool do_deploy_catapult =
+				ctrl.get_digital(DIGITAL_DOWN);
+			if (do_deploy_catapult) {
 				if (catapult_button_timer_running == false) {
 					catapult_button_timer->Restart();
 					catapult_button_timer_running = true;
