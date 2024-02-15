@@ -220,6 +220,10 @@ enum class AutonomousStep {
 	WaitForCatapultEngage,
 	WaitForCatapultSlip,
 	MoveBackAgainstPipe,
+	TurnTowardsPipe1,
+	DriveTowardsPipe1,
+	TurnTowardsPipe2,
+	DriveTowardsPipe2,
 	Done,
 };
 
@@ -246,9 +250,12 @@ void autonomous()
 
 	Timer auto_change_timer;
 	AutonomousStep sequence_step = AutonomousStep::MoveBackStart;
-	// AutonomousStep sequence_step = AutonomousStep::MoveBackAgainstPipe;
+	// AutonomousStep sequence_step = AutonomousStep::TurnTowardsPipe1;
 	left_drive_group.tare_position();
 	right_drive_group.tare_position();
+
+	left_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
+	right_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 
 	bool do_catapult_deploy = false;
 	bool running_auto = true;
@@ -425,12 +432,16 @@ void autonomous()
 			right_drive_group.move_absolute(
 				DRIVE_UNITS_PER_DEGREE * 20, MAX_RPM / 4);
 			if (right_drive_group.get_positions()[0] >
-			    DRIVE_UNITS_PER_DEGREE * 20 - 1) {
+				    DRIVE_UNITS_PER_DEGREE * 20 - 1 ||
+			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
+				    200) {
 				auto_change_timer.Restart();
 				sequence_step =
 					AutonomousStep::MoveAwayFromGoal2;
 				left_drive_group.tare_position();
 				right_drive_group.tare_position();
+				do_catapult_deploy = true;
+				deploy_catapult();
 			}
 			break;
 		case AutonomousStep::MoveAwayFromGoal2:
@@ -440,7 +451,9 @@ void autonomous()
 			right_drive_group.move_absolute(
 				MOVE_AWAY_FROM_GOAL_2_DISTANCE, MAX_RPM / 4);
 			if (left_drive_group.get_positions()[0] <
-			    MOVE_AWAY_FROM_GOAL_2_DISTANCE + 1) {
+				    MOVE_AWAY_FROM_GOAL_2_DISTANCE + 1 ||
+			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
+				    500) {
 				auto_change_timer.Restart();
 				sequence_step =
 					AutonomousStep::TurnAwayFromGoal2;
@@ -456,12 +469,12 @@ void autonomous()
 			right_drive_group.move_absolute(
 				DRIVE_UNITS_PER_DEGREE * 10, MAX_RPM / 4);
 			if (right_drive_group.get_positions()[0] >
-			    DRIVE_UNITS_PER_DEGREE * 10 - 1) {
+				    DRIVE_UNITS_PER_DEGREE * 10 - 1 ||
+			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
+				    200) {
 				auto_change_timer.Restart();
 				sequence_step =
 					AutonomousStep::MoveAwayFromGoal3;
-				do_catapult_deploy = true;
-				deploy_catapult();
 				left_drive_group.tare_position();
 				right_drive_group.tare_position();
 			}
@@ -548,7 +561,8 @@ void autonomous()
 			catapult_group.move(MAX_VOLTAGE);
 			catapult_block.brake();
 			if (catapult_group.get_current_draws()[0] < 300) {
-				sequence_step = AutonomousStep::Done;
+				sequence_step =
+					AutonomousStep::MoveBackAgainstPipe;
 				catapult_group.move(0);
 			}
 			break;
@@ -557,8 +571,70 @@ void autonomous()
 			right_drive_group.move(-30);
 			if (left_drive_group.get_current_draws()[0] > 1000 &&
 			    right_drive_group.get_current_draws()[0] > 1000) {
-				sequence_step = AutonomousStep::Done;
+				sequence_step =
+					AutonomousStep::TurnTowardsPipe1;
 				catapult_group.move(0);
+				left_drive_group.tare_position();
+			}
+			break;
+		case AutonomousStep::TurnTowardsPipe1:
+			left_drive_group.move_absolute(310.0, MAX_RPM);
+			right_drive_group.set_brake_modes(
+				pros::E_MOTOR_BRAKE_HOLD);
+			right_drive_group.brake();
+			if (left_drive_group.get_positions()[0] >=
+			    310.0 - 1.0) {
+				sequence_step =
+					AutonomousStep::DriveTowardsPipe1;
+				right_drive_group.set_brake_modes(
+					pros::E_MOTOR_BRAKE_COAST);
+				left_drive_group.move(0);
+				right_drive_group.move(0);
+				left_drive_group.tare_position();
+				right_drive_group.tare_position();
+			}
+			break;
+		case AutonomousStep::DriveTowardsPipe1:
+			left_drive_group.move_absolute(
+				DRIVE_UNITS_PER_INCH * 20, MAX_RPM);
+			right_drive_group.move_absolute(
+				DRIVE_UNITS_PER_INCH * 20, MAX_RPM);
+			if (left_drive_group.get_positions()[0] >=
+			    DRIVE_UNITS_PER_INCH * 20 - 1) {
+				auto_change_timer.Restart();
+				sequence_step =
+					AutonomousStep::TurnTowardsPipe2;
+				left_drive_group.move(0);
+				right_drive_group.move(0);
+				left_drive_group.tare_position();
+				right_drive_group.tare_position();
+			}
+			break;
+		case AutonomousStep::TurnTowardsPipe2:
+			left_drive_group.move_absolute(
+				DRIVE_UNITS_PER_DEGREE * -5, MAX_RPM);
+			right_drive_group.move_absolute(
+				DRIVE_UNITS_PER_DEGREE * 5, MAX_RPM);
+			if (right_drive_group.get_positions()[0] >=
+			    DRIVE_UNITS_PER_DEGREE * 5 - 1) {
+				auto_change_timer.Restart();
+				sequence_step =
+					AutonomousStep::DriveTowardsPipe2;
+				left_drive_group.tare_position();
+				right_drive_group.tare_position();
+			}
+			break;
+		case AutonomousStep::DriveTowardsPipe2:
+			left_drive_group.move_absolute(
+				DRIVE_UNITS_PER_INCH * 38, MAX_RPM);
+			right_drive_group.move_absolute(
+				DRIVE_UNITS_PER_INCH * 38, MAX_RPM);
+			if (left_drive_group.get_positions()[0] >=
+			    DRIVE_UNITS_PER_INCH * 38 - 1) {
+				auto_change_timer.Restart();
+				sequence_step = AutonomousStep::Done;
+				left_drive_group.brake();
+				right_drive_group.brake();
 			}
 			break;
 		case AutonomousStep::Done:
@@ -567,11 +643,15 @@ void autonomous()
 			right_drive_group = 0;
 			catapult_group = 0;
 			intake_spin_group = 0;
+			pros::delay(100);
 			break;
 		}
 
 		pros::delay(5);
 	}
+
+	left_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_COAST);
+	right_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_COAST);
 }
 
 std::unique_ptr<Timer> intake_extension_toggle_timer =
