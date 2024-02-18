@@ -28,6 +28,7 @@ enum class CatapultDeployStatus {
 	PullBackSecond,
 };
 
+bool catapult_deployed_in_auto = false;
 CatapultDeployStatus catapult_deploy_status =
 	CatapultDeployStatus::NotDeploying;
 Timer deploy_timer = Timer();
@@ -151,7 +152,6 @@ void initCommon()
 void initialize()
 {
 	initCommon();
-	deploy_catapult();
 }
 
 /**
@@ -197,41 +197,133 @@ double limit_value(double d, double max, double min)
 	return d;
 }
 
-enum class AutonomousStep {
-	MoveBackStart,
-	ExtendIntake,
-	RetractIntake,
-	MoveBackBeforeFirstTurn,
-	TurnTowardsGoal1,
-	MoveTowardsGoal1,
-	TurnTowardsGoal2,
-	MoveTowardsGoal2,
-	TurnTowardsGoal3,
-	MoveTowardsGoal4,
-	MoveAwayFromGoal1,
-	TurnAwayFromGoal1,
-	MoveAwayFromGoal2,
-	TurnAwayFromGoal2,
-	MoveAwayFromGoal3,
-	TurnAwayFromGoal3,
-	WaitForCatapultDeploy,
-	TurnAwayFromGoal4,
-	FireCatapult,
-	WaitForCatapultEngage,
-	WaitForCatapultSlip,
-	MoveBackAgainstPipe,
-	TurnTowardsPipe1,
-	DriveTowardsPipe1,
-	TurnTowardsPipe2,
-	DriveTowardsPipe2,
-	Done,
-};
-
 #define INTAKE_EXTENDED_POSITION 170
 #define INTAKE_RETRACTED_POSITION 60
 
 #define DRIVE_UNITS_PER_INCH 27.46290005363848
-#define DRIVE_UNITS_PER_DEGREE 3.1
+#define DRIVE_UNITS_PER_DEGREE 3.12
+
+enum class AutoActionType
+{
+	DriveAction,
+	IntakeSetExtend,
+	IntakeSpin,
+	DeployCatapult,
+	FireCatapultTime,
+	WaitForCatapultEngage,
+	WaitForCatapultSlip,
+};
+
+enum class MotorAction
+{
+	MoveVoltage,
+	MoveAbsolute,
+	Brake,
+};
+
+struct AutoAction
+{
+	AutoActionType action_type;
+	MotorAction left_drive_action;
+	double left_drive_target;
+	double left_drive_speed;
+	MotorAction right_drive_action;
+	double right_drive_target;
+	double right_drive_speed;
+
+	bool intake_extend;
+	double intake_extend_speed;
+	MotorAction intake_spin_action;
+	double intake_spin_speed;
+
+	MotorAction catapult_fire_action;
+	double catapult_fire_speed;
+
+	uint32_t required_num_to_procede;
+	double timeout_ms;
+
+
+	static AutoAction move_position(double drive_target, double drive_speed, double timeout_ms) {
+		return move_position(drive_target, drive_target, drive_speed, drive_speed, timeout_ms);
+	}
+
+	static AutoAction move_position(double left_drive_target, double right_drive_target, double left_drive_speed, double right_drive_speed, double timeout_ms, MotorAction left_drive_action = MotorAction::MoveAbsolute, MotorAction right_drive_action = MotorAction::MoveAbsolute) {
+		AutoAction new_action;
+
+		new_action.action_type = AutoActionType::DriveAction;
+		new_action.left_drive_action = left_drive_action;
+		new_action.left_drive_target = left_drive_target;
+		new_action.left_drive_speed = left_drive_speed;
+		new_action.right_drive_action = right_drive_action;
+		new_action.right_drive_target = right_drive_target;
+		new_action.right_drive_speed = right_drive_speed;
+
+		new_action.required_num_to_procede = 2;
+		new_action.timeout_ms = timeout_ms;
+
+		return new_action;
+	}
+
+	static AutoAction set_intake_extension(bool intake_extend, double rpm, double timeout_ms) {
+		AutoAction new_action;
+
+		new_action.action_type = AutoActionType::IntakeSetExtend;
+		new_action.intake_extend = intake_extend;
+		new_action.intake_extend_speed = rpm;
+		new_action.timeout_ms = timeout_ms;
+
+		return new_action;
+	}
+
+	static AutoAction set_intake_spin(double intake_spin_voltage, double timeout_ms) {
+		AutoAction new_action;
+
+		new_action.action_type = AutoActionType::IntakeSpin;
+		new_action.intake_spin_action = MotorAction::MoveVoltage;
+		new_action.intake_spin_speed = intake_spin_voltage;
+		new_action.timeout_ms = timeout_ms;
+
+		return new_action;
+	}
+
+	static AutoAction deploy_catapult() {
+		AutoAction new_action;
+
+		new_action.action_type = AutoActionType::DeployCatapult;
+		new_action.timeout_ms = 0;
+
+		return new_action;
+	}
+
+	static AutoAction fire_catapult_time(double timeout_ms) {
+		AutoAction new_action;
+
+		new_action.action_type = AutoActionType::FireCatapultTime;
+		new_action.timeout_ms = timeout_ms;
+
+		return new_action;
+	}
+
+	static AutoAction wait_for_catapult_engage() {
+		AutoAction new_action;
+
+		new_action.action_type = AutoActionType::WaitForCatapultEngage;
+		new_action.required_num_to_procede = 1;
+		new_action.timeout_ms = 2500;
+
+		return new_action;
+	}
+
+	static AutoAction wait_for_catapult_slip() {
+		AutoAction new_action;
+
+		new_action.action_type = AutoActionType::WaitForCatapultSlip;
+		new_action.required_num_to_procede = 1;
+		new_action.timeout_ms = 2500;
+
+		return new_action;
+	}
+};
 
 /**
  * Runs the user autonomous code. This function will be started in its own task
@@ -249,405 +341,135 @@ void autonomous()
 	initCommon();
 
 	Timer auto_change_timer;
-	AutonomousStep sequence_step = AutonomousStep::MoveBackStart;
-	// AutonomousStep sequence_step = AutonomousStep::TurnTowardsPipe1;
+
 	left_drive_group.tare_position();
 	right_drive_group.tare_position();
-
 	left_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 	right_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 
-	bool do_catapult_deploy = false;
-	bool running_auto = true;
-	while (running_auto) {
-		if (do_catapult_deploy)
+	std::vector<AutoAction> autonomous_steps;
+
+	// Grab starting triball
+	autonomous_steps.push_back(AutoAction::move_position(-DRIVE_UNITS_PER_INCH * 1.5, MAX_RPM / 4.0, 1500));
+	autonomous_steps.push_back(AutoAction::set_intake_spin(-MAX_VOLTAGE, 0));
+	autonomous_steps.push_back(AutoAction::set_intake_extension(true, MAX_RPM / 2.0, 1000));
+	autonomous_steps.push_back(AutoAction::set_intake_extension(false, MAX_RPM / 2.0, 500));
+	autonomous_steps.push_back(AutoAction::set_intake_spin(0, 0));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * -2.5, MAX_RPM / 4.0, 500));
+	// Move towards goal
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_DEGREE * -110, DRIVE_UNITS_PER_DEGREE * 110, MAX_RPM / 4.0, MAX_RPM / 4.0, 1500));
+	autonomous_steps.push_back(AutoAction::set_intake_spin(-MAX_VOLTAGE * 0.5, 0));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0, 2500));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_DEGREE * -120, DRIVE_UNITS_PER_DEGREE * 120, MAX_RPM / 4.0, MAX_RPM / 4.0, 1500));
+	autonomous_steps.push_back(AutoAction::set_intake_spin(-MAX_VOLTAGE, 0));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM, 2000));
+	// Go back to matchload zone
+	autonomous_steps.push_back(AutoAction::set_intake_spin(0, 0));
+	autonomous_steps.push_back(AutoAction::deploy_catapult());
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * -10, MAX_RPM / 4.0, 2500));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_DEGREE * -35, DRIVE_UNITS_PER_DEGREE * 35, MAX_RPM / 4.0, MAX_RPM / 4.0, 1000));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0, 2500));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_DEGREE * 45, DRIVE_UNITS_PER_DEGREE * -120, MAX_RPM / 6.0, MAX_RPM / 4.0, 2500));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 4.0, 1000));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_DEGREE * 10, 0, MAX_RPM / 4.0, MAX_RPM / 4.0, 500));
+	// autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_DEGREE * 25, 0, MAX_RPM / 4.0, MAX_RPM / 4.0, 500));
+	// Fire catapult
+	autonomous_steps.push_back(AutoAction::fire_catapult_time(20000));
+	autonomous_steps.push_back(AutoAction::wait_for_catapult_engage());
+	autonomous_steps.push_back(AutoAction::wait_for_catapult_slip());
+	// Home after firing
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * -4, MAX_RPM / 4.0, 1000));
+	// Contact overhead pipe
+	autonomous_steps.push_back(AutoAction::move_position(310.0, 0, MAX_RPM / 4.0, 0, 1000, MotorAction::MoveAbsolute, MotorAction::Brake));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * 20, MAX_RPM / 4.0, 4000));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_DEGREE * -5, DRIVE_UNITS_PER_DEGREE * 5, MAX_RPM, MAX_RPM, 1000));
+	autonomous_steps.push_back(AutoAction::move_position(DRIVE_UNITS_PER_INCH * 38, MAX_RPM, 4000));
+
+	for (const auto& step : autonomous_steps) {
+		auto_change_timer.Restart();
+		left_drive_group.brake();
+		right_drive_group.brake();
+		left_drive_group.tare_position();
+		right_drive_group.tare_position();
+
+		while (true) {
 			handle_catapult_deploy();
+			uint32_t num_ready_to_procede = 0;
+			switch (step.action_type) {
+			case AutoActionType::DriveAction:
+				switch (step.left_drive_action) {
+				case MotorAction::MoveVoltage:
+					left_drive_group.move(step.left_drive_speed);
+					break;
+				case MotorAction::MoveAbsolute:
+					left_drive_group.move_absolute(step.left_drive_target, step.left_drive_speed);
 
-		switch (sequence_step) {
-		case AutonomousStep::MoveBackStart:
-#define MOVE_BACK_START_DISTANCE -DRIVE_UNITS_PER_INCH * 1.5
-			left_drive_group.move_absolute(MOVE_BACK_START_DISTANCE,
-						       MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				MOVE_BACK_START_DISTANCE, MAX_RPM / 4);
-			if (left_drive_group.get_positions()[0] <
-			    MOVE_BACK_START_DISTANCE + 1) {
-				auto_change_timer.Restart();
-				sequence_step = AutonomousStep::ExtendIntake;
-			}
-			break;
-		case AutonomousStep::ExtendIntake:
-			left_drive_group.brake();
-			right_drive_group.brake();
-			intake_extension_group.move_absolute(
-				INTAKE_EXTENDED_POSITION, MAX_RPM / 2);
-			intake_spin_group.move(-MAX_VOLTAGE);
-			if (auto_change_timer.GetElapsedTime().AsMilliseconds() >
-			    1000) {
-				auto_change_timer.Restart();
-				sequence_step = AutonomousStep::RetractIntake;
-			}
-			break;
-		case AutonomousStep::RetractIntake:
-			intake_extension_group.move_absolute(
-				INTAKE_RETRACTED_POSITION, MAX_RPM);
-			if (auto_change_timer.GetElapsedTime().AsMilliseconds() >
-			    500) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::MoveBackBeforeFirstTurn;
-				intake_spin_group.move(0);
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::MoveBackBeforeFirstTurn:
-#define MOVE_BACK_BEFORE_TURN_TOWARDS_GOAL_DISTANCE -DRIVE_UNITS_PER_INCH * 2.5
-			left_drive_group.move_absolute(
-				MOVE_BACK_BEFORE_TURN_TOWARDS_GOAL_DISTANCE,
-				MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				MOVE_BACK_BEFORE_TURN_TOWARDS_GOAL_DISTANCE,
-				MAX_RPM / 4);
-			if (left_drive_group.get_positions()[0] <
-			    MOVE_BACK_BEFORE_TURN_TOWARDS_GOAL_DISTANCE + 1) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::TurnTowardsGoal1;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::TurnTowardsGoal1:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * 80, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * -80, MAX_RPM / 4);
-			if (left_drive_group.get_positions()[0] >
-			    DRIVE_UNITS_PER_DEGREE * 80 - 2) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::MoveTowardsGoal1;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::MoveTowardsGoal1:
-#define MOVE_TOWARDS_GOAL_1_DISTANCE DRIVE_UNITS_PER_INCH * 7
-			left_drive_group.move_absolute(
-				MOVE_TOWARDS_GOAL_1_DISTANCE, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				MOVE_TOWARDS_GOAL_1_DISTANCE, MAX_RPM / 4);
-			intake_spin_group.move(-MAX_VOLTAGE * 0.5);
-			if (left_drive_group.get_positions()[0] >
-			    MOVE_TOWARDS_GOAL_1_DISTANCE - 2) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::TurnTowardsGoal2;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::TurnTowardsGoal2:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * 150, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * -150, MAX_RPM / 4);
-			if (left_drive_group.get_positions()[0] >
-			    DRIVE_UNITS_PER_DEGREE * 150 - 2) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::MoveTowardsGoal2;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::MoveTowardsGoal2:
-#define MOVE_TOWARDS_GOAL_2_DISTANCE DRIVE_UNITS_PER_INCH * -8
-			left_drive_group.move_absolute(
-				MOVE_TOWARDS_GOAL_2_DISTANCE, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				MOVE_TOWARDS_GOAL_2_DISTANCE, MAX_RPM / 4);
-			if (left_drive_group.get_positions()[0] <
-			    MOVE_TOWARDS_GOAL_2_DISTANCE + 2) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::TurnTowardsGoal3;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::TurnTowardsGoal3:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * -85, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * 85, MAX_RPM / 4);
-			if (right_drive_group.get_positions()[0] >
-			    DRIVE_UNITS_PER_DEGREE * 85 - 2) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::MoveTowardsGoal4;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-				intake_spin_group.move(0);
-			}
-			break;
-		case AutonomousStep::MoveTowardsGoal4:
-#define MOVE_TOWARDS_GOAL_4_DISTANCE DRIVE_UNITS_PER_INCH * 14
-			left_drive_group.move_absolute(
-				MOVE_TOWARDS_GOAL_4_DISTANCE, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				MOVE_TOWARDS_GOAL_4_DISTANCE, MAX_RPM / 4);
-			if (auto_change_timer.GetElapsedTime().AsMilliseconds() >
-			    2500) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::MoveAwayFromGoal1;
-				left_drive_group.move(0);
-				right_drive_group.move(0);
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::MoveAwayFromGoal1:
-#define MOVE_AWAY_FROM_GOAL_1_DISTANCE DRIVE_UNITS_PER_INCH * -9
-			left_drive_group.move_absolute(
-				MOVE_AWAY_FROM_GOAL_1_DISTANCE, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				MOVE_AWAY_FROM_GOAL_1_DISTANCE, MAX_RPM / 4);
-			if (left_drive_group.get_positions()[0] <
-			    MOVE_AWAY_FROM_GOAL_1_DISTANCE + 1) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::TurnAwayFromGoal1;
-				left_drive_group.move(0);
-				right_drive_group.move(0);
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::TurnAwayFromGoal1:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * -20, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * 20, MAX_RPM / 4);
-			if (right_drive_group.get_positions()[0] >
-				    DRIVE_UNITS_PER_DEGREE * 20 - 1 ||
-			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
-				    200) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::MoveAwayFromGoal2;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-				do_catapult_deploy = true;
+					if (double_abs(left_drive_group.get_positions()[0] - step.left_drive_target) <= 1.0 )
+						num_ready_to_procede += 1;
+					break;
+				case MotorAction::Brake:
+					left_drive_group.brake();
+					break;
+				}
+				switch (step.right_drive_action) {
+				case MotorAction::MoveVoltage:
+					right_drive_group.move(step.right_drive_speed);
+					break;
+				case MotorAction::MoveAbsolute:
+					right_drive_group.move_absolute(step.right_drive_target, step.right_drive_speed);
+
+					if (double_abs(right_drive_group.get_positions()[0] - step.right_drive_target) <= 1.0 )
+						num_ready_to_procede += 1;
+					break;
+				case MotorAction::Brake:
+					right_drive_group.brake();
+					break;
+				}
+				break;
+			case AutoActionType::IntakeSetExtend:
+				if (step.intake_extend) {
+					intake_extension_group.move_absolute(INTAKE_EXTENDED_POSITION, step.intake_extend_speed);
+				} else {
+					intake_extension_group.move_absolute(INTAKE_RETRACTED_POSITION, step.intake_extend_speed);
+				}
+				break;
+			case AutoActionType::IntakeSpin:
+				intake_spin_group.move(step.intake_spin_speed);
+				break;
+			case AutoActionType::DeployCatapult:
+				catapult_deployed_in_auto = true;
 				deploy_catapult();
+				break;
+			case AutoActionType::FireCatapultTime:
+				catapult_group.move(MAX_VOLTAGE);
+				break;
+			case AutoActionType::WaitForCatapultEngage:
+				catapult_group.move(MAX_VOLTAGE);
+				catapult_block.brake();
+				if (catapult_group.get_current_draws()[0] > 500) {
+					num_ready_to_procede += 1;
+				}
+				break;
+			case AutoActionType::WaitForCatapultSlip:
+				catapult_group.move(MAX_VOLTAGE);
+				catapult_block.brake();
+				if (catapult_group.get_current_draws()[0] < 300) {
+					num_ready_to_procede += 1;
+				}
+				break;
 			}
-			break;
-		case AutonomousStep::MoveAwayFromGoal2:
-#define MOVE_AWAY_FROM_GOAL_2_DISTANCE DRIVE_UNITS_PER_INCH * -3
-			left_drive_group.move_absolute(
-				MOVE_AWAY_FROM_GOAL_2_DISTANCE, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				MOVE_AWAY_FROM_GOAL_2_DISTANCE, MAX_RPM / 4);
-			if (left_drive_group.get_positions()[0] <
-				    MOVE_AWAY_FROM_GOAL_2_DISTANCE + 1 ||
-			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
-				    500) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::TurnAwayFromGoal2;
-				left_drive_group.move(0);
-				right_drive_group.move(0);
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
+			pros::delay(5);
+			if (num_ready_to_procede >= step.required_num_to_procede || auto_change_timer.GetElapsedTime().AsMilliseconds() > step.timeout_ms) {
+				switch (step.action_type) {
+				case AutoActionType::WaitForCatapultSlip:
+					catapult_group.brake();
+					break;
+				default:
+					break;
+				}
+				break;
 			}
-			break;
-		case AutonomousStep::TurnAwayFromGoal2:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * -10, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * 10, MAX_RPM / 4);
-			if (right_drive_group.get_positions()[0] >
-				    DRIVE_UNITS_PER_DEGREE * 10 - 1 ||
-			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
-				    200) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::MoveAwayFromGoal3;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::MoveAwayFromGoal3:
-#define MOVE_AWAY_FROM_GOAL_3_DISTANCE DRIVE_UNITS_PER_INCH * -6
-			left_drive_group.move_absolute(
-				MOVE_AWAY_FROM_GOAL_3_DISTANCE, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				MOVE_AWAY_FROM_GOAL_3_DISTANCE, MAX_RPM / 4);
-			if (left_drive_group.get_positions()[0] <
-				    MOVE_AWAY_FROM_GOAL_3_DISTANCE + 1 ||
-			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
-				    500) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::TurnAwayFromGoal3;
-				left_drive_group.move(0);
-				right_drive_group.move(0);
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::TurnAwayFromGoal3:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * -10, MAX_RPM / 4);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * -160, MAX_RPM / 4);
-			if (right_drive_group.get_positions()[0] <
-				    DRIVE_UNITS_PER_DEGREE * -160 + 1 ||
-			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
-				    1500) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::WaitForCatapultDeploy;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::WaitForCatapultDeploy:
-			if (catapult_deploy_status ==
-			    CatapultDeployStatus::NotDeploying) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::TurnAwayFromGoal4;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::TurnAwayFromGoal4:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * 10, MAX_RPM);
-			right_drive_group.move(-30);
-			if (left_drive_group.get_positions()[0] >
-				    DRIVE_UNITS_PER_DEGREE * 10 - 2 ||
-			    auto_change_timer.GetElapsedTime().AsMilliseconds() >
-				    300) {
-				auto_change_timer.Restart();
-				sequence_step = AutonomousStep::FireCatapult;
-				left_drive_group.move(0);
-				right_drive_group.move(0);
-			}
-			break;
-		case AutonomousStep::FireCatapult:
-			catapult_group.move(MAX_VOLTAGE);
-			catapult_block.brake();
-			if (auto_change_timer.GetElapsedTime().AsSeconds() >
-			    20) {
-				sequence_step =
-					AutonomousStep::WaitForCatapultEngage;
-				catapult_group.move(0);
-			}
-			break;
-		case AutonomousStep::WaitForCatapultEngage:
-			catapult_group.move(MAX_VOLTAGE);
-			catapult_block.brake();
-			if (catapult_group.get_current_draws()[0] > 500) {
-				sequence_step =
-					AutonomousStep::WaitForCatapultSlip;
-				catapult_group.move(0);
-			}
-			break;
-		case AutonomousStep::WaitForCatapultSlip:
-			catapult_group.move(MAX_VOLTAGE);
-			catapult_block.brake();
-			if (catapult_group.get_current_draws()[0] < 300) {
-				sequence_step =
-					AutonomousStep::MoveBackAgainstPipe;
-				catapult_group.move(0);
-			}
-			break;
-		case AutonomousStep::MoveBackAgainstPipe:
-			left_drive_group.move(-30);
-			right_drive_group.move(-30);
-			if (left_drive_group.get_current_draws()[0] > 1000 &&
-			    right_drive_group.get_current_draws()[0] > 1000) {
-				sequence_step =
-					AutonomousStep::TurnTowardsPipe1;
-				catapult_group.move(0);
-				left_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::TurnTowardsPipe1:
-			left_drive_group.move_absolute(310.0, MAX_RPM);
-			right_drive_group.set_brake_modes(
-				pros::E_MOTOR_BRAKE_HOLD);
-			right_drive_group.brake();
-			if (left_drive_group.get_positions()[0] >=
-			    310.0 - 1.0) {
-				sequence_step =
-					AutonomousStep::DriveTowardsPipe1;
-				right_drive_group.set_brake_modes(
-					pros::E_MOTOR_BRAKE_COAST);
-				left_drive_group.move(0);
-				right_drive_group.move(0);
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::DriveTowardsPipe1:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_INCH * 20, MAX_RPM);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_INCH * 20, MAX_RPM);
-			if (left_drive_group.get_positions()[0] >=
-			    DRIVE_UNITS_PER_INCH * 20 - 1) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::TurnTowardsPipe2;
-				left_drive_group.move(0);
-				right_drive_group.move(0);
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::TurnTowardsPipe2:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * -5, MAX_RPM);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_DEGREE * 5, MAX_RPM);
-			if (right_drive_group.get_positions()[0] >=
-			    DRIVE_UNITS_PER_DEGREE * 5 - 1) {
-				auto_change_timer.Restart();
-				sequence_step =
-					AutonomousStep::DriveTowardsPipe2;
-				left_drive_group.tare_position();
-				right_drive_group.tare_position();
-			}
-			break;
-		case AutonomousStep::DriveTowardsPipe2:
-			left_drive_group.move_absolute(
-				DRIVE_UNITS_PER_INCH * 38, MAX_RPM);
-			right_drive_group.move_absolute(
-				DRIVE_UNITS_PER_INCH * 38, MAX_RPM);
-			if (left_drive_group.get_positions()[0] >=
-			    DRIVE_UNITS_PER_INCH * 38 - 1) {
-				auto_change_timer.Restart();
-				sequence_step = AutonomousStep::Done;
-				left_drive_group.brake();
-				right_drive_group.brake();
-			}
-			break;
-		case AutonomousStep::Done:
-			running_auto = false;
-			left_drive_group = 0;
-			right_drive_group = 0;
-			catapult_group = 0;
-			intake_spin_group = 0;
-			pros::delay(100);
-			break;
 		}
-
-		pros::delay(5);
 	}
 
 	left_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_COAST);
@@ -677,6 +499,9 @@ std::unique_ptr<Timer> catapult_button_timer = std::make_unique<Timer>();
 void opcontrol()
 {
 	initCommon();
+
+	if (!catapult_deployed_in_auto)
+		deploy_catapult();
 
 	while (true) {
 		handle_catapult_deploy();
