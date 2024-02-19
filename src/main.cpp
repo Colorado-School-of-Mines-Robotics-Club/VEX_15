@@ -242,15 +242,15 @@ struct AutoStep {
 };
 
 class AutonomousSequence {
-private:
+	private:
 	std::vector<AutoStep> autonomous_steps;
-public:
 
+	public:
 	void move_position(double drive_target, double drive_speed,
-					double timeout_ms)
+			   double timeout_ms)
 	{
 		move_position(drive_target, drive_target, drive_speed,
-				     drive_speed, timeout_ms);
+			      drive_speed, timeout_ms);
 	}
 
 	void move_position(
@@ -292,7 +292,7 @@ public:
 	}
 
 	void set_intake_extension(bool intake_extend, double rpm,
-					       double timeout_ms)
+				  double timeout_ms)
 	{
 		AutoStep new_action;
 
@@ -304,8 +304,7 @@ public:
 		autonomous_steps.push_back(new_action);
 	}
 
-	void set_intake_spin(double intake_spin_voltage,
-					  double timeout_ms)
+	void set_intake_spin(double intake_spin_voltage, double timeout_ms)
 	{
 		AutoStep new_action;
 
@@ -369,7 +368,8 @@ public:
 		autonomous_steps.push_back(new_action);
 	}
 
-	void run_auto() {
+	void run_auto()
+	{
 		Timer auto_change_timer;
 		for (const auto &step : autonomous_steps) {
 			auto_change_timer.Restart();
@@ -394,11 +394,13 @@ public:
 							step.left_drive_speed);
 
 						if (double_abs(
-								left_drive_group
-									.get_positions()[0] -
-								step.left_drive_target) <=
-							1.0)
-							num_ready_to_procede += 1;
+							    left_drive_group
+								    .get_positions()
+									    [0] -
+							    step.left_drive_target) <=
+						    1.0)
+							num_ready_to_procede +=
+								1;
 						break;
 					case MotorAction::Brake:
 						left_drive_group.brake();
@@ -415,11 +417,13 @@ public:
 							step.right_drive_speed);
 
 						if (double_abs(
-								right_drive_group
-									.get_positions()[0] -
-								step.right_drive_target) <=
-							1.0)
-							num_ready_to_procede += 1;
+							    right_drive_group
+								    .get_positions()
+									    [0] -
+							    step.right_drive_target) <=
+						    1.0)
+							num_ready_to_procede +=
+								1;
 						break;
 					case MotorAction::Brake:
 						right_drive_group.brake();
@@ -438,7 +442,8 @@ public:
 					}
 					break;
 				case AutoActionType::IntakeSpin:
-					intake_spin_group.move(step.intake_spin_speed);
+					intake_spin_group.move(
+						step.intake_spin_speed);
 					break;
 				case AutoActionType::DeployCatapult:
 					catapult_deployed_in_auto = true;
@@ -446,7 +451,7 @@ public:
 					break;
 				case AutoActionType::WaitForCatapultDeploy:
 					if (catapult_deploy_status ==
-						CatapultDeployStatus::NotDeploying) {
+					    CatapultDeployStatus::NotDeploying) {
 						num_ready_to_procede += 1;
 					}
 					break;
@@ -456,25 +461,28 @@ public:
 				case AutoActionType::WaitForCatapultEngage:
 					catapult_group.move(MAX_VOLTAGE);
 					catapult_block.brake();
-					if (catapult_group.get_current_draws()[0] >
-						500) {
+					if (catapult_group
+						    .get_current_draws()[0] >
+					    500) {
 						num_ready_to_procede += 1;
 					}
 					break;
 				case AutoActionType::WaitForCatapultSlip:
 					catapult_group.move(MAX_VOLTAGE);
 					catapult_block.brake();
-					if (catapult_group.get_current_draws()[0] <
-						300) {
+					if (catapult_group
+						    .get_current_draws()[0] <
+					    300) {
 						num_ready_to_procede += 1;
 					}
 					break;
 				}
 				pros::delay(5);
 				if (num_ready_to_procede >=
-						step.required_num_to_procede ||
-					auto_change_timer.GetElapsedTime().AsMilliseconds() >
-						step.timeout_ms) {
+					    step.required_num_to_procede ||
+				    auto_change_timer.GetElapsedTime()
+						    .AsMilliseconds() >
+					    step.timeout_ms) {
 					switch (step.action_type) {
 					case AutoActionType::WaitForCatapultSlip:
 						catapult_group.brake();
@@ -511,47 +519,46 @@ void autonomous()
 
 	AutonomousSequence auto_sequence;
 
-// #define SKILLS_AUTO
+	// #define SKILLS_AUTO
 
 #ifndef SKILLS_AUTO
 	// Grab starting triball
-	auto_sequence.move_position(
-		-DRIVE_UNITS_PER_INCH * 1.5, MAX_RPM / 4.0, 1500);
+	auto_sequence.move_position(-DRIVE_UNITS_PER_INCH * 1.5, MAX_RPM / 4.0,
+				    1500);
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
 	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 1000);
 	auto_sequence.set_intake_extension(false, MAX_RPM / 2.0, 500);
 	auto_sequence.set_intake_spin(0, 0);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * -2.5, MAX_RPM / 4.0, 500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -2.5, MAX_RPM / 4.0,
+				    500);
 	// Move towards goal
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_DEGREE * -110, DRIVE_UNITS_PER_DEGREE * 110,
-		MAX_RPM / 4.0, MAX_RPM / 4.0, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -110,
+				    DRIVE_UNITS_PER_DEGREE * 110, MAX_RPM / 4.0,
+				    MAX_RPM / 4.0, 1500);
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE * 0.5, 0);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0, 2500);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_DEGREE * -125, DRIVE_UNITS_PER_DEGREE * 125,
-		MAX_RPM / 4.0, MAX_RPM / 4.0, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0,
+				    2500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -125,
+				    DRIVE_UNITS_PER_DEGREE * 125, MAX_RPM / 4.0,
+				    MAX_RPM / 4.0, 1500);
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * 12, MAX_RPM, 2000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM, 2000);
 	// Go back to matchload zone
 	auto_sequence.set_intake_spin(0, 0);
 	auto_sequence.deploy_catapult();
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * -10, MAX_RPM / 4.0, 2500);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_DEGREE * -35, DRIVE_UNITS_PER_DEGREE * 35,
-		MAX_RPM / 4.0, MAX_RPM / 4.0, 1000);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0, 2500);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_DEGREE * 45, DRIVE_UNITS_PER_DEGREE * -120,
-		MAX_RPM / 6.0, MAX_RPM / 4.0, 2500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -10, MAX_RPM / 4.0,
+				    2500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -35,
+				    DRIVE_UNITS_PER_DEGREE * 35, MAX_RPM / 4.0,
+				    MAX_RPM / 4.0, 1000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0,
+				    2500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 45,
+				    DRIVE_UNITS_PER_DEGREE * -120,
+				    MAX_RPM / 6.0, MAX_RPM / 4.0, 2500);
 	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.25, 1200);
 	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 25, 0,
-					  MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
+				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
 	// Fire catapult
 	auto_sequence.fire_catapult_time(20000);
 	auto_sequence.wait_for_catapult_engage();
@@ -559,20 +566,19 @@ void autonomous()
 	// Home after firing
 	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 1200);
 	// Contact overhead pipe
-	auto_sequence.move_position(
-		300.0, 0, MAX_RPM / 4.0, 0, 1000, MotorAction::MoveAbsolute,
-		MotorAction::Brake);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * 20, MAX_RPM / 4.0, 4000);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * 36, MAX_RPM, 4000);
+	auto_sequence.move_position(300.0, 0, MAX_RPM / 4.0, 0, 1000,
+				    MotorAction::MoveAbsolute,
+				    MotorAction::Brake);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 20, MAX_RPM / 4.0,
+				    4000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 36, MAX_RPM, 4000);
 #else
 	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
 	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
 	auto_sequence.deploy_catapult();
 	auto_sequence.wait_for_catapult_deploy();
 	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 25, 0,
-					  MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
+				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
 	// Fire catapult
 	auto_sequence.fire_catapult_time(42000);
 	auto_sequence.wait_for_catapult_engage();
@@ -580,16 +586,14 @@ void autonomous()
 	// Home after firing
 	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 1200);
 	// Go to center
-	auto_sequence.move_position(
-		0, DRIVE_UNITS_PER_DEGREE * 25, 0, MAX_RPM / 2.0, 2500);
+	auto_sequence.move_position(0, DRIVE_UNITS_PER_DEGREE * 25, 0,
+				    MAX_RPM / 2.0, 2500);
 	auto_sequence.set_intake_spin(MAX_VOLTAGE, 0);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * 60, MAX_RPM, 1500);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_DEGREE * 55, DRIVE_UNITS_PER_DEGREE * -55,
-		MAX_RPM / 2.0, MAX_RPM / 2.0, 750);
-	auto_sequence.move_position(
-		DRIVE_UNITS_PER_INCH * 90, MAX_RPM, 5000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 60, MAX_RPM, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 55,
+				    DRIVE_UNITS_PER_DEGREE * -55, MAX_RPM / 2.0,
+				    MAX_RPM / 2.0, 750);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 90, MAX_RPM, 5000);
 	auto_sequence.set_intake_spin(0, 0);
 #endif
 
