@@ -60,7 +60,8 @@ void handle_catapult_deploy()
 		catapult_group.move(-75);
 		if (deploy_timer.GetElapsedTime().AsMilliseconds() < 100)
 			break;
-		if (catapult_group.get_actual_velocities()[0] > -10.0) {
+		if (catapult_group.get_actual_velocities()[0] > -10.0 ||
+		    deploy_timer.GetElapsedTime().AsSeconds() > 5.0) {
 			catapult_deploy_status =
 				CatapultDeployStatus::PullBackFirst;
 			catapult_group.brake();
@@ -69,7 +70,8 @@ void handle_catapult_deploy()
 		break;
 	case CatapultDeployStatus::PullBackFirst:
 		catapult_group.move_absolute(2600, MAX_RPM);
-		if (catapult_group.get_positions()[0] >= 2600) {
+		if (catapult_group.get_positions()[0] >= 2600 ||
+		    deploy_timer.GetElapsedTime().AsSeconds() > 4.0) {
 			catapult_deploy_status =
 				CatapultDeployStatus::PlaceBlock;
 			deploy_timer.Restart();
@@ -77,8 +79,7 @@ void handle_catapult_deploy()
 		break;
 	case CatapultDeployStatus::PlaceBlock:
 		catapult_block.move(-MAX_VOLTAGE);
-		if (deploy_timer.GetElapsedTime().AsMilliseconds() >= 500.0 ||
-		    deploy_timer.GetElapsedTime().AsSeconds() > 5.0) {
+		if (deploy_timer.GetElapsedTime().AsMilliseconds() >= 500.0) {
 			catapult_deploy_status =
 				CatapultDeployStatus::PullBackSecond;
 			deploy_timer.Restart();
