@@ -19,6 +19,8 @@ pros::Motor_Group catapult_group(CATAPULT_DRIVE_PORTS);
 
 pros::Motor catapult_block(CATAPULT_STOPPER_PORT);
 
+pros::Motor climb_motor(CLIMB_MOTOR_PORT);
+
 enum class CatapultDeployStatus {
 	NotDeploying,
 	RemoveBlock,
@@ -136,6 +138,10 @@ void initCommon()
 	catapult_block.set_encoder_units(
 		pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
 	catapult_block.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
+
+	climb_motor.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
+	climb_motor.set_encoder_units(
+		pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
 
 	intake_extension_group.move(-50);
 	pros::delay(1000);
@@ -684,8 +690,7 @@ void opcontrol()
 				catapult_block.brake();
 			}
 
-			bool do_deploy_catapult =
-				ctrl.get_digital(DIGITAL_DOWN);
+			bool do_deploy_catapult = ctrl.get_digital(DIGITAL_UP);
 			if (do_deploy_catapult) {
 				if (catapult_button_timer_running == false) {
 					catapult_button_timer->Restart();
@@ -698,6 +703,11 @@ void opcontrol()
 			} else {
 				catapult_button_timer_running = false;
 			}
+		}
+
+		bool do_deploy_climb = (bool)ctrl.get_digital(DIGITAL_DOWN) &&
+				       (bool)ctrl.get_digital(DIGITAL_B);
+		if (do_deploy_climb) {
 		}
 
 		pros::delay(5);
