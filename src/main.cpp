@@ -88,13 +88,13 @@ void handle_catapult_deploy()
 		}
 		break;
 	case CatapultDeployStatus::PullBackSecond:
-		catapult_block.brake();
 		catapult_group.move_absolute(3000, MAX_RPM);
 		if (catapult_group.get_positions()[0] >= 3000 ||
 		    deploy_timer.GetElapsedTime().AsSeconds() > 2.0) {
 			catapult_deploy_status =
 				CatapultDeployStatus::NotDeploying;
 			catapult_group.brake();
+			catapult_block.brake();
 		}
 		break;
 	}
@@ -522,46 +522,15 @@ void autonomous()
 	// #define SKILLS_AUTO
 
 #ifndef SKILLS_AUTO
-	// Grab starting triball
-	auto_sequence.move_position(-DRIVE_UNITS_PER_INCH * 1.5, MAX_RPM / 4.0,
-				    1500);
-	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
-	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 1000);
-	auto_sequence.set_intake_extension(false, MAX_RPM / 1.5, 500);
-	auto_sequence.set_intake_spin(0, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -2.5, MAX_RPM / 4.0,
-				    500);
-	// Move towards goal
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -110,
-				    DRIVE_UNITS_PER_DEGREE * 110, MAX_RPM / 4.0,
-				    MAX_RPM / 4.0, 1500);
-	auto_sequence.set_intake_spin(-MAX_VOLTAGE * 0.5, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0,
-				    2500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -132,
-				    DRIVE_UNITS_PER_DEGREE * 132, MAX_RPM / 4.0,
-				    MAX_RPM / 4.0, 1500);
-	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM, 1500);
-	// Go back to matchload zone
-	auto_sequence.set_intake_spin(0, 0);
+	// Deploy
+	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
+	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
 	auto_sequence.deploy_catapult();
-
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -10, MAX_RPM / 4.0,
-				    2500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -35,
-				    DRIVE_UNITS_PER_DEGREE * 35, MAX_RPM / 4.0,
-				    MAX_RPM / 4.0, 1000);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0,
-				    2500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 45,
-				    DRIVE_UNITS_PER_DEGREE * -120,
-				    MAX_RPM / 6.0, MAX_RPM / 4.0, 2500);
-	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.25, 1200);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 30, 0,
+	auto_sequence.wait_for_catapult_deploy();
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 25, 0,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
 	// Fire catapult
-	auto_sequence.fire_catapult_time(20000);
+	auto_sequence.fire_catapult_time(22000);
 	auto_sequence.wait_for_catapult_engage();
 	auto_sequence.wait_for_catapult_slip();
 	// Home after firing
@@ -569,12 +538,11 @@ void autonomous()
 	// Contact overhead pipe
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 2, MAX_RPM / 4.0,
 				    500);
-	auto_sequence.move_position(320.0, -40, MAX_RPM / 4.0, 0, 1500,
+	auto_sequence.move_position(315.0, -35, MAX_RPM / 4.0, 0, 1500,
 				    MotorAction::MoveAbsolute,
 				    MotorAction::Brake);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 20, MAX_RPM / 4.0,
-				    4000);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 36, MAX_RPM, 4000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 56, MAX_RPM / 4.0,
+				    10000);
 #else
 	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
 	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
