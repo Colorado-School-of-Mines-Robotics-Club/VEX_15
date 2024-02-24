@@ -26,6 +26,7 @@ enum class CatapultDeployStatus {
 	RemoveBlock,
 	Home,
 	PullBackFirst,
+	PullBackFirstPrecalibrated,
 	PlaceBlock,
 	PullBackSecond,
 };
@@ -79,6 +80,15 @@ void handle_catapult_deploy()
 			deploy_timer.Restart();
 		}
 		break;
+	case CatapultDeployStatus::PullBackFirstPrecalibrated:
+		catapult_group.move_absolute(2100, MAX_RPM);
+		if (catapult_group.get_positions()[0] >= 2100 ||
+		    deploy_timer.GetElapsedTime().AsSeconds() > 5.0) {
+			catapult_deploy_status =
+				CatapultDeployStatus::PlaceBlock;
+			deploy_timer.Restart();
+		}
+		break;
 	case CatapultDeployStatus::PlaceBlock:
 		catapult_block.move(-MAX_VOLTAGE);
 		if (deploy_timer.GetElapsedTime().AsMilliseconds() >= 500.0) {
@@ -104,6 +114,12 @@ void set_deploy_catapult()
 {
 	catapult_deploy_status = CatapultDeployStatus::RemoveBlock;
 	deploy_timer.Restart();
+}
+
+void set_deploy_catapult_precalibrated() {
+	catapult_deploy_status = CatapultDeployStatus::PullBackFirstPrecalibrated;
+	deploy_timer.Restart();
+	catapult_group.tare_position();
 }
 
 void initCommon()
@@ -208,6 +224,7 @@ enum class AutoActionType {
 	IntakeSetExtend,
 	IntakeSpin,
 	DeployCatapult,
+	DeployCatapultPrecalibrated,
 	WaitForCatapultDeploy,
 	FireCatapultTime,
 	WaitForCatapultEngage,
@@ -321,6 +338,16 @@ class AutonomousSequence {
 		AutoStep new_action;
 
 		new_action.action_type = AutoActionType::DeployCatapult;
+		new_action.timeout_ms = 0;
+
+		autonomous_steps.push_back(new_action);
+	}
+
+	void deploy_catapult_precalibrated()
+	{
+		AutoStep new_action;
+
+		new_action.action_type = AutoActionType::DeployCatapultPrecalibrated;
 		new_action.timeout_ms = 0;
 
 		autonomous_steps.push_back(new_action);
@@ -449,6 +476,10 @@ class AutonomousSequence {
 					catapult_deployed_in_auto = true;
 					set_deploy_catapult();
 					break;
+				case AutoActionType::DeployCatapultPrecalibrated:
+					catapult_deployed_in_auto = true;
+					set_deploy_catapult_precalibrated();
+					break;
 				case AutoActionType::WaitForCatapultDeploy:
 					if (catapult_deploy_status ==
 					    CatapultDeployStatus::NotDeploying) {
@@ -463,7 +494,7 @@ class AutonomousSequence {
 					catapult_block.brake();
 					if (catapult_group
 						    .get_current_draws()[0] >
-					    500) {
+					    500 && auto_change_timer.GetElapsedTime().AsMilliseconds() > 200) {
 						num_ready_to_procede += 1;
 					}
 					break;
@@ -519,8 +550,13 @@ void autonomous()
 
 	AutonomousSequence auto_sequence;
 
-	// #define SKILLS_AUTO
+	// #define CALIBRATE_CATAPULT_AUTO
+	#define SKILLS_AUTO
 
+#ifdef CALIBRATE_CATAPULT_AUTO
+	auto_sequence.wait_for_catapult_engage();
+	auto_sequence.wait_for_catapult_slip();
+#else
 #ifndef SKILLS_AUTO
 	// Grab starting triball
 	auto_sequence.move_position(-DRIVE_UNITS_PER_INCH * 1.5, MAX_RPM / 4.0,
@@ -575,7 +611,8 @@ void autonomous()
 #else
 	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
 	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
-	auto_sequence.deploy_catapult();
+	// auto_sequence.deploy_catapult();
+	auto_sequence.deploy_catapult_precalibrated();
 	auto_sequence.wait_for_catapult_deploy();
 	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 25, 0,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
@@ -597,6 +634,7 @@ void autonomous()
 	auto_sequence.set_intake_spin(0, 0);
 	auto_sequence.drive_speed(-MAX_VOLTAGE, 500);
 	auto_sequence.drive_speed(0, 0);
+#endif
 #endif
 
 	auto_sequence.run_auto();
@@ -634,7 +672,8 @@ void opcontrol()
 	initCommon();
 
 	if (!catapult_deployed_in_auto)
-		set_deploy_catapult();
+		// set_deploy_catapult();
+		set_deploy_catapult_precalibrated();
 
 	while (true) {
 		handle_catapult_deploy();
