@@ -541,8 +541,10 @@ void autonomous()
 	auto_sequence.move_position(315.0, -35, MAX_RPM / 4.0, 0, 1500,
 				    MotorAction::MoveAbsolute,
 				    MotorAction::Brake);
+	auto_sequence.set_intake_spin(MAX_VOLTAGE, 0);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 56, MAX_RPM / 4.0,
 				    10000);
+	auto_sequence.set_intake_spin(0, 0);
 #else
 	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
 	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
