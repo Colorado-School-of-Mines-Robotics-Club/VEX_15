@@ -527,7 +527,7 @@ void autonomous()
 				    1500);
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
 	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 1000);
-	auto_sequence.set_intake_extension(false, MAX_RPM / 2.0, 500);
+	auto_sequence.set_intake_extension(false, MAX_RPM / 1.5, 500);
 	auto_sequence.set_intake_spin(0, 0);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -2.5, MAX_RPM / 4.0,
 				    500);
@@ -538,14 +538,15 @@ void autonomous()
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE * 0.5, 0);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -13, MAX_RPM / 4.0,
 				    2500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -125,
-				    DRIVE_UNITS_PER_DEGREE * 125, MAX_RPM / 4.0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -132,
+				    DRIVE_UNITS_PER_DEGREE * 132, MAX_RPM / 4.0,
 				    MAX_RPM / 4.0, 1500);
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM, 2000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM, 1500);
 	// Go back to matchload zone
 	auto_sequence.set_intake_spin(0, 0);
 	auto_sequence.deploy_catapult();
+
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -10, MAX_RPM / 4.0,
 				    2500);
 	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -35,
@@ -557,7 +558,7 @@ void autonomous()
 				    DRIVE_UNITS_PER_DEGREE * -120,
 				    MAX_RPM / 6.0, MAX_RPM / 4.0, 2500);
 	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.25, 1200);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 25, 0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 30, 0,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
 	// Fire catapult
 	auto_sequence.fire_catapult_time(20000);
@@ -566,7 +567,9 @@ void autonomous()
 	// Home after firing
 	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 1200);
 	// Contact overhead pipe
-	auto_sequence.move_position(300.0, 0, MAX_RPM / 4.0, 0, 1000,
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 2, MAX_RPM / 4.0,
+				    500);
+	auto_sequence.move_position(320.0, -40, MAX_RPM / 4.0, 0, 1500,
 				    MotorAction::MoveAbsolute,
 				    MotorAction::Brake);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 20, MAX_RPM / 4.0,
