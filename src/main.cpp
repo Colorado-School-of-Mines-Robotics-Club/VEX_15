@@ -63,7 +63,7 @@ void handle_catapult_deploy()
 		if (deploy_timer.GetElapsedTime().AsMilliseconds() < 100)
 			break;
 		if (catapult_group.get_actual_velocities()[0] > -10.0 ||
-		    deploy_timer.GetElapsedTime().AsSeconds() > 5.0) {
+		    deploy_timer.GetElapsedTime().AsSeconds() > 8.0) {
 			catapult_deploy_status =
 				CatapultDeployStatus::PullBackFirst;
 			catapult_group.brake();
@@ -73,7 +73,7 @@ void handle_catapult_deploy()
 	case CatapultDeployStatus::PullBackFirst:
 		catapult_group.move_absolute(2600, MAX_RPM);
 		if (catapult_group.get_positions()[0] >= 2600 ||
-		    deploy_timer.GetElapsedTime().AsSeconds() > 4.0) {
+		    deploy_timer.GetElapsedTime().AsSeconds() > 10.0) {
 			catapult_deploy_status =
 				CatapultDeployStatus::PlaceBlock;
 			deploy_timer.Restart();
@@ -142,6 +142,8 @@ void initCommon()
 	climb_motor.set_gearing(pros::motor_gearset_e_t::E_MOTOR_GEAR_GREEN);
 	climb_motor.set_encoder_units(
 		pros::motor_encoder_units_e::E_MOTOR_ENCODER_DEGREES);
+	climb_motor.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
+	climb_motor.brake();
 
 	intake_extension_group.move(-50);
 	pros::delay(1000);
@@ -193,15 +195,6 @@ double double_abs(double i)
 		return -i;
 	}
 	return i;
-}
-
-double limit_value(double d, double max, double min)
-{
-	if (d > max)
-		return max;
-	else if (d < min)
-		return min;
-	return d;
 }
 
 #define INTAKE_EXTENDED_POSITION 170
@@ -602,6 +595,8 @@ void autonomous()
 				    MAX_RPM / 2.0, 750);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 90, MAX_RPM, 5000);
 	auto_sequence.set_intake_spin(0, 0);
+	auto_sequence.drive_speed(-MAX_VOLTAGE, 500);
+	auto_sequence.drive_speed(0, 0);
 #endif
 
 	auto_sequence.run_auto();
@@ -616,6 +611,10 @@ bool is_intake_extended = false;
 
 bool catapult_button_timer_running = false;
 std::unique_ptr<Timer> catapult_button_timer = std::make_unique<Timer>();
+
+bool climb_arm_deployed = false;
+bool climb_trigger_timer_running = false;
+std::unique_ptr<Timer> climb_trigger_timer = std::make_unique<Timer>();
 
 /**
  * Runs the operator control code. This function will be started in its own
@@ -676,11 +675,9 @@ void opcontrol()
 		if (catapult_deploy_status ==
 		    CatapultDeployStatus::NotDeploying) {
 			bool do_fire_catapult = ctrl.get_digital(DIGITAL_R2);
-			// bool do_collapse_catapult = ctrl.get_digital(DIGITAL_B);
-			bool do_collapse_catapult = false;
-			if (do_collapse_catapult) {
-				catapult_block.move(MAX_VOLTAGE);
-				catapult_group.move(MAX_VOLTAGE);
+			bool do_reverse_catapult = ctrl.get_digital(DIGITAL_UP);
+			if (do_reverse_catapult) {
+				catapult_group.move(-MAX_VOLTAGE);
 			} else if (do_fire_catapult) {
 				catapult_group.move(MAX_VOLTAGE);
 				catapult_block.brake();
@@ -690,7 +687,15 @@ void opcontrol()
 				catapult_block.brake();
 			}
 
-			bool do_deploy_catapult = ctrl.get_digital(DIGITAL_UP);
+			bool do_place_block = ctrl.get_digital(DIGITAL_LEFT);
+			bool do_remove_block = ctrl.get_digital(DIGITAL_RIGHT);
+			if (do_place_block) {
+				catapult_block.move(-MAX_VOLTAGE);
+			} else if (do_remove_block) {
+				catapult_block.move(MAX_VOLTAGE);
+			}
+
+			bool do_deploy_catapult = ctrl.get_digital(DIGITAL_X);
 			if (do_deploy_catapult) {
 				if (catapult_button_timer_running == false) {
 					catapult_button_timer->Restart();
@@ -708,6 +713,19 @@ void opcontrol()
 		bool do_deploy_climb = (bool)ctrl.get_digital(DIGITAL_DOWN) &&
 				       (bool)ctrl.get_digital(DIGITAL_B);
 		if (do_deploy_climb) {
+			if (climb_trigger_timer_running == false) {
+				climb_trigger_timer->Restart();
+				climb_trigger_timer_running = true;
+			} else if (climb_trigger_timer->GetElapsedTime()
+					   .AsMilliseconds() > 1000.0) {
+				climb_arm_deployed = !climb_arm_deployed;
+				climb_trigger_timer_running = false;
+			}
+		}
+		if (climb_arm_deployed) {
+			climb_motor.move_absolute(120, MAX_RPM);
+		} else {
+			climb_motor.move_absolute(0, MAX_RPM);
 		}
 
 		pros::delay(5);
