@@ -71,8 +71,8 @@ void handle_catapult_deploy()
 		}
 		break;
 	case CatapultDeployStatus::PullBackFirst:
-		catapult_group.move_absolute(2600, MAX_RPM);
-		if (catapult_group.get_positions()[0] >= 2600 ||
+		catapult_group.move_absolute(1300, MAX_RPM);
+		if (catapult_group.get_positions()[0] >= 1300 ||
 		    deploy_timer.GetElapsedTime().AsSeconds() > 10.0) {
 			catapult_deploy_status =
 				CatapultDeployStatus::PlaceBlock;
@@ -88,8 +88,8 @@ void handle_catapult_deploy()
 		}
 		break;
 	case CatapultDeployStatus::PullBackSecond:
-		catapult_group.move_absolute(3000, MAX_RPM);
-		if (catapult_group.get_positions()[0] >= 3000 ||
+		catapult_group.move_absolute(1500, MAX_RPM);
+		if (catapult_group.get_positions()[0] >= 1500 ||
 		    deploy_timer.GetElapsedTime().AsSeconds() > 2.0) {
 			catapult_deploy_status =
 				CatapultDeployStatus::NotDeploying;
@@ -105,6 +105,8 @@ void set_deploy_catapult()
 	catapult_deploy_status = CatapultDeployStatus::RemoveBlock;
 	deploy_timer.Restart();
 }
+
+bool has_intake_homed = false;
 
 void initCommon()
 {
@@ -145,11 +147,14 @@ void initCommon()
 	climb_motor.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 	climb_motor.brake();
 
-	intake_extension_group.move(-50);
-	pros::delay(1000);
-	intake_extension_group.tare_position();
-	pros::delay(10);
-	intake_extension_group.move(0);
+	if (!has_intake_homed) {
+		has_intake_homed = true;
+		intake_extension_group.move(-50);
+		pros::delay(1000);
+		intake_extension_group.tare_position();
+		pros::delay(10);
+		intake_extension_group.move(0);
+	}
 }
 
 /**
@@ -652,7 +657,7 @@ void opcontrol()
 			if (do_reverse_catapult) {
 				catapult_group.move(-MAX_VOLTAGE);
 			} else if (do_fire_catapult) {
-				catapult_group.move(MAX_VOLTAGE);
+				catapult_group.move(MAX_VOLTAGE * 0.9);
 				catapult_block.brake();
 				// pros::lcd::set_text(1, std::to_string(catapult_group.get_current_draws()[0]));
 			} else {
