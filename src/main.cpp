@@ -203,7 +203,7 @@ double double_abs(double i)
 }
 
 #define INTAKE_EXTENDED_POSITION 170
-#define INTAKE_RETRACTED_POSITION 60
+#define INTAKE_RETRACTED_POSITION 80
 
 #define DRIVE_UNITS_PER_INCH 27.46290005363848
 #define DRIVE_UNITS_PER_DEGREE 3.12
@@ -290,6 +290,22 @@ class AutonomousSequence {
 		new_action.left_drive_speed = drive_speed;
 		new_action.right_drive_action = MotorAction::MoveVoltage;
 		new_action.right_drive_speed = drive_speed;
+
+		new_action.timeout_ms = timeout_ms;
+
+		autonomous_steps.push_back(new_action);
+	}
+
+	void drive_speed(double drive_speed_left, double drive_speed_right,
+			 double timeout_ms)
+	{
+		AutoStep new_action;
+
+		new_action.action_type = AutoActionType::DriveAction;
+		new_action.left_drive_action = MotorAction::MoveVoltage;
+		new_action.left_drive_speed = drive_speed_left;
+		new_action.right_drive_action = MotorAction::MoveVoltage;
+		new_action.right_drive_speed = drive_speed_right;
 
 		new_action.timeout_ms = timeout_ms;
 
@@ -529,54 +545,67 @@ void autonomous()
 				    1500);
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
 	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 1000);
-	auto_sequence.set_intake_extension(false, MAX_RPM / 1.5, 500);
-	auto_sequence.set_intake_spin(0, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -4, MAX_RPM / 2.0,
-				    500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 4.0,
+				    1000);
+	auto_sequence.set_intake_extension(false, MAX_RPM / 1.4, 250);
 	// Move towards goal
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 125,
-				    DRIVE_UNITS_PER_DEGREE * -125,
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 120,
+				    DRIVE_UNITS_PER_DEGREE * -120,
 				    MAX_RPM / 2.0, MAX_RPM / 2.0, 1500);
+	auto_sequence.set_intake_spin(0, 0);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 10, MAX_RPM / 4.0,
 				    2500);
 	// Deploy catapult
 	auto_sequence.deploy_catapult();
 	// Outake
+	auto_sequence.set_intake_extension(false, MAX_RPM, 100);
 	auto_sequence.set_intake_spin(MAX_VOLTAGE / 3.0, 0);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 4.0,
 				    2500);
 	auto_sequence.set_intake_spin(0, 0);
-	// // Go back to matchload zone
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -4, MAX_RPM / 2.0,
+	// Go back to matchload zone
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -5, MAX_RPM / 4.0,
 				    2500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 75,
-				    DRIVE_UNITS_PER_DEGREE * -75, MAX_RPM / 2.0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 85,
+				    DRIVE_UNITS_PER_DEGREE * -95, MAX_RPM / 2.0,
 				    MAX_RPM / 2.0, 1500);
 	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 2000);
 	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 30, 0,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
-	// // Fire catapult
+	// Fire catapult
 	auto_sequence.fire_catapult_time(2000);
 	auto_sequence.wait_for_catapult_engage();
 	auto_sequence.wait_for_catapult_slip();
 	// Home after firing
-	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 1200);
-	// Move to push triball under goal
+	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, -MAX_VOLTAGE * 0.1,
+				  1500);
+	// Move and push triball under goal
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 8, MAX_RPM / 2.0,
 				    1000);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 125,
-				    DRIVE_UNITS_PER_DEGREE * -125,
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 120,
+				    DRIVE_UNITS_PER_DEGREE * -120,
 				    MAX_RPM / 2.0, MAX_RPM / 2.0, 1500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -14, MAX_RPM / 2.0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -16, MAX_RPM / 2.0,
 				    1000);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 20,
-				    DRIVE_UNITS_PER_DEGREE * -20, MAX_RPM / 2.0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 30,
+				    DRIVE_UNITS_PER_DEGREE * -30, MAX_RPM / 2.0,
 				    MAX_RPM / 2.0, 1500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -14, MAX_RPM, 500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 6, MAX_RPM / 2.0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -16, MAX_RPM, 750);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM / 2.0,
 				    500);
 
 	// Move to post
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -115,
+				    DRIVE_UNITS_PER_DEGREE * 115, MAX_RPM / 2.0,
+				    MAX_RPM / 2.0, 2500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 40, MAX_RPM / 2.0,
+				    3000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 60,
+				    DRIVE_UNITS_PER_DEGREE * -60, MAX_RPM / 2.0,
+				    MAX_RPM / 2.0, 1500);
+	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 4, MAX_RPM / 4.0,
+				    3000);
 
 	auto_sequence.run_auto();
 
