@@ -2,6 +2,7 @@
 
 #include "ports.h"
 #include "pros/misc.h"
+#include "pros/misc.hpp"
 #include "pros/motors.h"
 #include "pros/rtos.hpp"
 #include "timer.h"
@@ -357,12 +358,13 @@ class AutonomousSequence {
 		autonomous_steps.push_back(new_action);
 	}
 
-	void fire_catapult_time(double timeout_ms)
+	void fire_catapult_time(double timeout_ms, double voltage = MAX_VOLTAGE)
 	{
 		AutoStep new_action;
 
 		new_action.action_type = AutoActionType::FireCatapultTime;
 		new_action.timeout_ms = timeout_ms;
+		new_action.catapult_fire_speed = voltage;
 
 		autonomous_steps.push_back(new_action);
 	}
@@ -477,7 +479,40 @@ class AutonomousSequence {
 					}
 					break;
 				case AutoActionType::FireCatapultTime:
-					catapult_group.move(MAX_VOLTAGE);
+					catapult_group.move(
+						step.catapult_fire_speed);
+					{
+						Timer jam_timer = Timer();
+						if (catapult_group
+							    .get_current_draws()
+								    [0] >
+						    1750) {
+							bool do_unjam = true;
+							while (jam_timer
+								       .GetElapsedTime()
+								       .AsMilliseconds() <
+							       500) {
+								if (catapult_group
+									    .get_current_draws()
+										    [0] <
+								    1750) {
+									do_unjam =
+										false;
+									break;
+								}
+							}
+							if (do_unjam) {
+								catapult_group.move(
+									-MAX_VOLTAGE);
+								pros::delay(
+									500);
+								catapult_group
+									.move(0);
+								pros::delay(
+									1000);
+							}
+						}
+					}
 					break;
 				case AutoActionType::WaitForCatapultEngage:
 					catapult_group.move(MAX_VOLTAGE);
@@ -508,6 +543,8 @@ class AutonomousSequence {
 					case AutoActionType::WaitForCatapultSlip:
 						catapult_group.brake();
 						break;
+					case AutoActionType::FireCatapultTime:
+						catapult_group.brake();
 					default:
 						break;
 					}
@@ -531,6 +568,7 @@ class AutonomousSequence {
  */
 void autonomous()
 {
+	has_intake_homed = false;
 	initCommon();
 
 	left_drive_group.tare_position();
@@ -573,7 +611,7 @@ void autonomous()
 	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 30, 0,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
 	// Fire catapult
-	auto_sequence.fire_catapult_time(2000);
+	auto_sequence.fire_catapult_time(20000, MAX_VOLTAGE * 0.8);
 	auto_sequence.wait_for_catapult_engage();
 	auto_sequence.wait_for_catapult_slip();
 	// Home after firing
