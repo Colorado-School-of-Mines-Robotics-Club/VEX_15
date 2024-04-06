@@ -524,58 +524,59 @@ void autonomous()
 
 	AutonomousSequence auto_sequence;
 
-	// #define SKILLS_AUTO
-
-#ifndef SKILLS_AUTO
-	// Deploy
-	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
-	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
-	auto_sequence.deploy_catapult();
-	auto_sequence.wait_for_catapult_deploy();
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 25, 0,
-				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
-	// Fire catapult
-	auto_sequence.fire_catapult_time(22000);
-	auto_sequence.wait_for_catapult_engage();
-	auto_sequence.wait_for_catapult_slip();
-	// Home after firing
-	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 1200);
-	// Contact overhead pipe
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 2, MAX_RPM / 4.0,
+	// Grab starting triball
+	auto_sequence.move_position(-DRIVE_UNITS_PER_INCH * 1.5, MAX_RPM / 4.0,
+				    1500);
+	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
+	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 1000);
+	auto_sequence.set_intake_extension(false, MAX_RPM / 1.5, 500);
+	auto_sequence.set_intake_spin(0, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -4, MAX_RPM / 2.0,
 				    500);
-	auto_sequence.move_position(315.0, -35, MAX_RPM / 4.0, 0, 1500,
-				    MotorAction::MoveAbsolute,
-				    MotorAction::Brake);
-	auto_sequence.set_intake_spin(MAX_VOLTAGE, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 56, MAX_RPM / 4.0,
-				    10000);
-	auto_sequence.set_intake_spin(0, 0);
-#else
-	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
-	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
+	// Move towards goal
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 125,
+				    DRIVE_UNITS_PER_DEGREE * -125,
+				    MAX_RPM / 2.0, MAX_RPM / 2.0, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 10, MAX_RPM / 4.0,
+				    2500);
+	// Deploy catapult
 	auto_sequence.deploy_catapult();
-	auto_sequence.wait_for_catapult_deploy();
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 25, 0,
+	// Outake
+	auto_sequence.set_intake_spin(MAX_VOLTAGE / 3.0, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 4.0,
+				    2500);
+	auto_sequence.set_intake_spin(0, 0);
+	// // Go back to matchload zone
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -4, MAX_RPM / 2.0,
+				    2500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 75,
+				    DRIVE_UNITS_PER_DEGREE * -75, MAX_RPM / 2.0,
+				    MAX_RPM / 2.0, 1500);
+	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 2000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 30, 0,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
-	// Fire catapult
-	auto_sequence.fire_catapult_time(42000);
+	// // Fire catapult
+	auto_sequence.fire_catapult_time(2000);
 	auto_sequence.wait_for_catapult_engage();
 	auto_sequence.wait_for_catapult_slip();
 	// Home after firing
 	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 1200);
-	// Go to center
-	auto_sequence.move_position(0, DRIVE_UNITS_PER_DEGREE * 25, 0,
-				    MAX_RPM / 2.0, 2500);
-	auto_sequence.set_intake_spin(MAX_VOLTAGE, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 60, MAX_RPM, 1500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 55,
-				    DRIVE_UNITS_PER_DEGREE * -55, MAX_RPM / 2.0,
-				    MAX_RPM / 2.0, 750);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 90, MAX_RPM, 5000);
-	auto_sequence.set_intake_spin(0, 0);
-	auto_sequence.drive_speed(-MAX_VOLTAGE, 500);
-	auto_sequence.drive_speed(0, 0);
-#endif
+	// Move to push triball under goal
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 8, MAX_RPM / 2.0,
+				    1000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 125,
+				    DRIVE_UNITS_PER_DEGREE * -125,
+				    MAX_RPM / 2.0, MAX_RPM / 2.0, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -14, MAX_RPM / 2.0,
+				    1000);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 20,
+				    DRIVE_UNITS_PER_DEGREE * -20, MAX_RPM / 2.0,
+				    MAX_RPM / 2.0, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -14, MAX_RPM, 500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 6, MAX_RPM / 2.0,
+				    500);
+
+	// Move to post
 
 	auto_sequence.run_auto();
 
