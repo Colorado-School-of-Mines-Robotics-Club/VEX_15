@@ -17,6 +17,8 @@ pros::Motor_Group right_drive_group(RIGHT_DRIVE_PORTS);
 pros::Motor_Group intake_extension_group(INTAKE_EXTENSION_PORTS);
 pros::Motor_Group intake_spin_group(INTAKE_SPIN_PORTS);
 pros::Motor_Group catapult_group(CATAPULT_DRIVE_PORTS);
+pros::ADIDigitalOut left_wing(LEFT_WING_PORT);
+pros::ADIDigitalOut right_wing(RIGHT_WING_PORT);
 
 pros::Motor catapult_block(CATAPULT_STOPPER_PORT);
 
@@ -655,6 +657,12 @@ std::unique_ptr<Timer> intake_extension_toggle_timer =
 	std::make_unique<Timer>();
 bool is_intake_extended = false;
 
+std::unique_ptr<Timer> left_wing_toggle_timer = std::make_unique<Timer>();
+bool left_wing_deployed = false;
+
+std::unique_ptr<Timer> right_wing_toggle_timer = std::make_unique<Timer>();
+bool right_wing_deployed = false;
+
 bool catapult_button_timer_running = false;
 std::unique_ptr<Timer> catapult_button_timer = std::make_unique<Timer>();
 
@@ -706,6 +714,24 @@ void opcontrol()
 				INTAKE_RETRACTED_POSITION, MAX_RPM);
 		}
 
+		// Left wing control code
+		if (ctrl.get_digital(DIGITAL_DOWN) &&
+		    left_wing_toggle_timer->GetElapsedTime().AsMilliseconds() >
+			    200) {
+			left_wing_deployed = !left_wing_deployed;
+			left_wing.set_value(left_wing_deployed);
+			left_wing_toggle_timer->Restart();
+		}
+
+		// Right wing control code
+		if (ctrl.get_digital(DIGITAL_B) &&
+		    right_wing_toggle_timer->GetElapsedTime().AsMilliseconds() >
+			    200) {
+			right_wing_deployed = !right_wing_deployed;
+			right_wing.set_value(right_wing_deployed);
+			right_wing_toggle_timer->Restart();
+		}
+
 		// bool right_trigger_upper = ctrl.get_digital(DIGITAL_R1);
 		bool do_intake = ctrl.get_digital(DIGITAL_L2);
 		bool do_outtake = ctrl.get_digital(DIGITAL_L1);
@@ -754,24 +780,6 @@ void opcontrol()
 			} else {
 				catapult_button_timer_running = false;
 			}
-		}
-
-		bool do_deploy_climb = (bool)ctrl.get_digital(DIGITAL_DOWN) &&
-				       (bool)ctrl.get_digital(DIGITAL_B);
-		if (do_deploy_climb) {
-			if (climb_trigger_timer_running == false) {
-				climb_trigger_timer->Restart();
-				climb_trigger_timer_running = true;
-			} else if (climb_trigger_timer->GetElapsedTime()
-					   .AsMilliseconds() > 1000.0) {
-				climb_arm_deployed = !climb_arm_deployed;
-				climb_trigger_timer_running = false;
-			}
-		}
-		if (climb_arm_deployed) {
-			climb_motor.move_absolute(120, MAX_RPM);
-		} else {
-			climb_motor.move_absolute(0, MAX_RPM);
 		}
 
 		pros::delay(5);

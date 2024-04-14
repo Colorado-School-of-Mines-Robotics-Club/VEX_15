@@ -10,3 +10,6 @@
 #define CATAPULT_STOPPER_PORT -13
 
 #define CLIMB_MOTOR_PORT -14
+
+#define LEFT_WING_PORT 'G'
+#define RIGHT_WING_PORT 'H'
