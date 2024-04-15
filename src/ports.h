@@ -1,5 +1,7 @@
 // clang-format off
 
+#define IMU_PORT 18
+
 #define LEFT_DRIVE_PORTS { 7, 8, -9, 10 }
 #define RIGHT_DRIVE_PORTS { -1, 2, -3, -4 }
 

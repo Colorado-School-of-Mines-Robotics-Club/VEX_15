@@ -1,6 +1,7 @@
 #include "main.h"
 
 #include "ports.h"
+#include "pros/imu.hpp"
 #include "pros/misc.h"
 #include "pros/misc.hpp"
 #include "pros/motors.h"
@@ -11,6 +12,8 @@
 #define MAX_RPM 200
 
 pros::Controller ctrl(pros::E_CONTROLLER_MASTER);
+
+pros::Imu imu(IMU_PORT);
 
 pros::Motor_Group left_drive_group(LEFT_DRIVE_PORTS);
 pros::Motor_Group right_drive_group(RIGHT_DRIVE_PORTS);
@@ -110,6 +113,7 @@ void set_deploy_catapult()
 }
 
 bool has_intake_homed = false;
+bool has_imu_been_set = false;
 
 void initCommon()
 {
@@ -150,6 +154,10 @@ void initCommon()
 	climb_motor.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 	climb_motor.brake();
 
+	if (!has_imu_been_set) {
+		imu.reset();
+	}
+
 	if (!has_intake_homed) {
 		has_intake_homed = true;
 		intake_extension_group.move(-50);
@@ -157,6 +165,12 @@ void initCommon()
 		intake_extension_group.tare_position();
 		pros::delay(10);
 		intake_extension_group.move(0);
+	}
+
+	if (!has_imu_been_set) {
+		while (imu.is_calibrating())
+			pros::delay(5);
+		has_imu_been_set = true;
 	}
 }
 
@@ -168,7 +182,6 @@ void initCommon()
  */
 void initialize()
 {
-	initCommon();
 }
 
 /**
@@ -212,6 +225,9 @@ double double_abs(double i)
 #define DRIVE_UNITS_PER_DEGREE 3.12
 
 enum class AutoActionType {
+	WaitUntilMatchTime,
+	ResetIMU,
+	TurnIMUFromStart,
 	DriveAction,
 	IntakeSetExtend,
 	IntakeSpin,
@@ -228,8 +244,20 @@ enum class MotorAction {
 	Brake,
 };
 
+enum class Direction {
+	Clockwise,
+	CounterClockwise,
+};
+
 struct AutoStep {
 	AutoActionType action_type;
+	uint32_t delay_ms_after_done = 0;
+
+	double imu_degree_target;
+	double imu_turn_half_offset;
+	double imu_turn_target_range;
+	Direction imu_turn_direction;
+
 	MotorAction left_drive_action;
 	double left_drive_target;
 	double left_drive_speed;
@@ -247,13 +275,67 @@ struct AutoStep {
 
 	uint32_t required_num_to_procede = 1;
 	double timeout_ms;
+
+	double wait_until_clock_time;
 };
 
 class AutonomousSequence {
 	private:
 	std::vector<AutoStep> autonomous_steps;
+	Timer auto_timer;
 
 	public:
+	void start_timer()
+	{
+		auto_timer.Restart();
+	}
+
+	void wait_until_match_time(double time_s)
+	{
+		AutoStep new_action;
+
+		new_action.action_type = AutoActionType::WaitUntilMatchTime;
+		new_action.wait_until_clock_time = time_s;
+		new_action.timeout_ms = 10000000;
+
+		autonomous_steps.push_back(new_action);
+	}
+
+	void reset_imu(double timeout_ms, bool blocking = false)
+	{
+		AutoStep new_action;
+
+		new_action.action_type = AutoActionType::ResetIMU;
+		new_action.timeout_ms = timeout_ms;
+
+		autonomous_steps.push_back(new_action);
+	}
+
+	void turn_imu(Direction direction, double degrees, double drive_voltage,
+		      double timeout_ms, uint32_t delay_ms_after_done = 5,
+		      double turn_target_range = 2.0,
+		      double imu_turn_half_offset = 5.0)
+	{
+		AutoStep new_action;
+
+		new_action.delay_ms_after_done = delay_ms_after_done;
+
+		new_action.action_type = AutoActionType::TurnIMUFromStart;
+		new_action.imu_degree_target = degrees;
+		new_action.imu_turn_direction = direction;
+		new_action.imu_turn_half_offset = imu_turn_half_offset;
+		new_action.imu_turn_target_range = turn_target_range;
+
+		new_action.left_drive_action = MotorAction::MoveVoltage;
+		new_action.left_drive_speed = drive_voltage;
+		new_action.right_drive_action = MotorAction::MoveVoltage;
+		new_action.right_drive_speed = drive_voltage;
+
+		new_action.timeout_ms = timeout_ms;
+
+		autonomous_steps.push_back(new_action);
+	}
+
 	void move_position(double drive_target, double drive_speed,
 			   double timeout_ms)
 	{
@@ -395,6 +477,8 @@ class AutonomousSequence {
 
 	void run_auto()
 	{
+		double last_imu_rotation = 0.0;
+
 		Timer auto_change_timer;
 		for (const auto &step : autonomous_steps) {
 			auto_change_timer.Restart();
@@ -407,6 +491,42 @@ class AutonomousSequence {
 				handle_catapult_deploy();
 				uint32_t num_ready_to_procede = 0;
 				switch (step.action_type) {
+				case AutoActionType::WaitUntilMatchTime:
+					if (auto_timer.GetElapsedTime()
+						    .AsSeconds() >=
+					    step.wait_until_clock_time)
+						num_ready_to_procede += 1;
+				case AutoActionType::ResetIMU:
+					imu.reset();
+
+					if (!imu.is_calibrating())
+						num_ready_to_procede += 1;
+					break;
+				case AutoActionType::TurnIMUFromStart: {
+					double current_angle =
+						imu.get_rotation();
+					double mult =
+						(step.imu_turn_direction ==
+								 Direction::
+									 Clockwise ?
+							 1.0 :
+							 -1.0) *
+						(current_angle - step.imu_degree_target <
+								 step.imu_turn_half_offset ?
+							 0.5 :
+							 1.0);
+					left_drive_group.move(
+						step.left_drive_speed * mult);
+					right_drive_group.move(
+						-step.left_drive_speed * mult);
+
+					if (std::abs(current_angle -
+						     step.imu_degree_target) <
+					    step.imu_turn_target_range) {
+						num_ready_to_procede += 1;
+					}
+					break;
+				}
 				case AutoActionType::DriveAction:
 					switch (step.left_drive_action) {
 					case MotorAction::MoveVoltage:
@@ -542,6 +662,18 @@ class AutonomousSequence {
 						    .AsMilliseconds() >
 					    step.timeout_ms) {
 					switch (step.action_type) {
+					case AutoActionType::TurnIMUFromStart: {
+						left_drive_group.set_brake_modes(
+							pros::E_MOTOR_BRAKE_HOLD);
+						right_drive_group.set_brake_modes(
+							pros::E_MOTOR_BRAKE_HOLD);
+						left_drive_group.brake();
+						right_drive_group.brake();
+						left_drive_group.set_brake_modes(
+							pros::E_MOTOR_BRAKE_COAST);
+						right_drive_group.set_brake_modes(
+							pros::E_MOTOR_BRAKE_COAST);
+					}
 					case AutoActionType::WaitForCatapultSlip:
 						catapult_group.brake();
 						break;
@@ -550,6 +682,9 @@ class AutonomousSequence {
 					default:
 						break;
 					}
+					if (step.delay_ms_after_done != 0)
+						pros::delay(
+							step.delay_ms_after_done);
 					break;
 				}
 			}
@@ -570,6 +705,9 @@ class AutonomousSequence {
  */
 void autonomous()
 {
+	AutonomousSequence auto_sequence;
+	auto_sequence.start_timer();
+	has_imu_been_set = false;
 	has_intake_homed = false;
 	initCommon();
 
@@ -578,20 +716,18 @@ void autonomous()
 	left_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 	right_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 
-	AutonomousSequence auto_sequence;
-
 	// Grab starting triball
+	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
+	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 0);
 	auto_sequence.move_position(-DRIVE_UNITS_PER_INCH * 1.5, MAX_RPM / 4.0,
 				    1500);
-	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
-	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 1000);
+	auto_sequence.drive_speed(0, 750);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 4.0,
 				    1000);
-	auto_sequence.set_intake_extension(false, MAX_RPM / 1.4, 250);
+	auto_sequence.set_intake_extension(false, MAX_RPM / 1.4, 500);
+	auto_sequence.set_intake_spin(0, 0);
 	// Move towards goal
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 120,
-				    DRIVE_UNITS_PER_DEGREE * -120,
-				    MAX_RPM / 2.0, MAX_RPM / 2.0, 1500);
+	auto_sequence.turn_imu(Direction::Clockwise, 83, MAX_VOLTAGE, 1500);
 	auto_sequence.set_intake_spin(0, 0);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 10, MAX_RPM / 4.0,
 				    2500);
@@ -599,52 +735,57 @@ void autonomous()
 	auto_sequence.deploy_catapult();
 	// Outake
 	auto_sequence.set_intake_extension(false, MAX_RPM, 100);
-	auto_sequence.set_intake_spin(MAX_VOLTAGE / 3.0, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 4.0,
+	auto_sequence.set_intake_spin(MAX_VOLTAGE / 2.5, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -8, MAX_RPM / 3.0,
 				    2500);
 	auto_sequence.set_intake_spin(0, 0);
 	// Go back to matchload zone
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -5, MAX_RPM / 4.0,
-				    2500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 85,
-				    DRIVE_UNITS_PER_DEGREE * -95, MAX_RPM / 2.0,
-				    MAX_RPM / 2.0, 1500);
-	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 2000);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 30, 0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -4, MAX_RPM, 2500);
+	auto_sequence.turn_imu(Direction::Clockwise, 160, MAX_VOLTAGE, 1500);
+	auto_sequence.drive_speed(-MAX_VOLTAGE, 300);
+	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 750);
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 40, 0,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
 	// Fire catapult
-	auto_sequence.fire_catapult_time(20000, MAX_VOLTAGE * 0.8);
+	auto_sequence.fire_catapult_time(20000, MAX_VOLTAGE * 0.9);
 	auto_sequence.wait_for_catapult_engage();
 	auto_sequence.wait_for_catapult_slip();
 	// Home after firing
 	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, -MAX_VOLTAGE * 0.1,
-				  1500);
+				  1000);
 	// Move and push triball under goal
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 8, MAX_RPM / 2.0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 10, MAX_RPM, 1000);
+	auto_sequence.turn_imu(Direction::Clockwise, 265, MAX_VOLTAGE, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -14, MAX_RPM / 2.0,
 				    1000);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 120,
-				    DRIVE_UNITS_PER_DEGREE * -120,
-				    MAX_RPM / 2.0, MAX_RPM / 2.0, 1500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -16, MAX_RPM / 2.0,
-				    1000);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 30,
-				    DRIVE_UNITS_PER_DEGREE * -30, MAX_RPM / 2.0,
-				    MAX_RPM / 2.0, 1500);
+	auto_sequence.turn_imu(Direction::Clockwise, 300, MAX_VOLTAGE, 1500);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -16, MAX_RPM, 750);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM / 2.0,
 				    500);
-
 	// Move to post
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -115,
-				    DRIVE_UNITS_PER_DEGREE * 115, MAX_RPM / 2.0,
-				    MAX_RPM / 2.0, 2500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 40, MAX_RPM / 2.0,
-				    3000);
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 60,
-				    DRIVE_UNITS_PER_DEGREE * -60, MAX_RPM / 2.0,
-				    MAX_RPM / 2.0, 1500);
-	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 4, MAX_RPM / 4.0,
+	auto_sequence.turn_imu(Direction::CounterClockwise, 225, MAX_VOLTAGE,
+			       1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 44, MAX_RPM, 2500);
+	auto_sequence.turn_imu(Direction::Clockwise, 253, MAX_VOLTAGE, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM / 4.0,
+				    2500);
+	// Turn & push triballs away
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -3, MAX_RPM / 2.0,
+				    1000);
+	auto_sequence.turn_imu(Direction::CounterClockwise, 255,
+			       MAX_VOLTAGE / 2.0, 1500);
+	auto_sequence.set_intake_extension(true, MAX_RPM, 0);
+	auto_sequence.set_intake_spin(MAX_VOLTAGE, 250);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 2, MAX_RPM / 2.0,
+				    750);
+	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
+	auto_sequence.set_intake_spin(0, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 2.0,
+				    1000);
+	auto_sequence.turn_imu(Direction::Clockwise, 252, MAX_VOLTAGE, 500);
+	auto_sequence.wait_until_match_time(43.0);
+	auto_sequence.set_intake_extension(true, MAX_RPM, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 6, MAX_RPM / 2.0,
 				    3000);
 
 	auto_sequence.run_auto();
@@ -692,6 +833,8 @@ void opcontrol()
 
 	while (true) {
 		handle_catapult_deploy();
+
+		// ctrl.set_text(0, 0, std::to_string(imu.get_rotation()));
 
 		int l_stick_y = ctrl.get_analog(ANALOG_LEFT_Y);
 		int r_stick_y = ctrl.get_analog(ANALOG_RIGHT_Y);
