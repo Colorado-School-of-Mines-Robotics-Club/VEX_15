@@ -7,6 +7,7 @@
 #include "pros/motors.h"
 #include "pros/rtos.hpp"
 #include "timer.h"
+#include <algorithm>
 
 #define MAX_VOLTAGE 127
 #define MAX_RPM 200
@@ -115,7 +116,7 @@ void set_deploy_catapult()
 bool has_intake_homed = false;
 bool has_imu_been_set = false;
 
-void initCommon()
+void initCommon(bool init_imu = true)
 {
 	pros::lcd::initialize();
 
@@ -154,20 +155,20 @@ void initCommon()
 	climb_motor.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 	climb_motor.brake();
 
-	if (!has_imu_been_set) {
+	if (init_imu && !has_imu_been_set) {
 		imu.reset();
 	}
 
 	if (!has_intake_homed) {
 		has_intake_homed = true;
 		intake_extension_group.move(-50);
-		pros::delay(1000);
+		pros::delay(400);
 		intake_extension_group.tare_position();
 		pros::delay(10);
 		intake_extension_group.move(0);
 	}
 
-	if (!has_imu_been_set) {
+	if (init_imu && !has_imu_been_set) {
 		while (imu.is_calibrating())
 			pros::delay(5);
 		has_imu_been_set = true;
@@ -236,6 +237,7 @@ enum class AutoActionType {
 	FireCatapultTime,
 	WaitForCatapultEngage,
 	WaitForCatapultSlip,
+	RunBlockingLambda,
 };
 
 enum class MotorAction {
@@ -277,6 +279,8 @@ struct AutoStep {
 	double timeout_ms;
 
 	double wait_until_clock_time;
+
+	std::function<void(Timer &)> lambda;
 };
 
 class AutonomousSequence {
@@ -475,6 +479,16 @@ class AutonomousSequence {
 		autonomous_steps.push_back(new_action);
 	}
 
+	void run_blocking_lambda(std::function<void(Timer &)> func)
+	{
+		AutoStep new_action;
+
+		new_action.action_type = AutoActionType::RunBlockingLambda;
+		new_action.lambda = func;
+
+		autonomous_steps.push_back(new_action);
+	}
+
 	void run_auto()
 	{
 		double last_imu_rotation = 0.0;
@@ -600,42 +614,36 @@ class AutonomousSequence {
 						num_ready_to_procede += 1;
 					}
 					break;
-				case AutoActionType::FireCatapultTime:
+				case AutoActionType::FireCatapultTime: {
 					catapult_group.move(
 						step.catapult_fire_speed);
-					{
-						Timer jam_timer = Timer();
-						if (catapult_group
-							    .get_current_draws()
-								    [0] >
-						    1750) {
-							bool do_unjam = true;
-							while (jam_timer
-								       .GetElapsedTime()
-								       .AsMilliseconds() <
-							       500) {
-								if (catapult_group
-									    .get_current_draws()
-										    [0] <
-								    1750) {
-									do_unjam =
-										false;
-									break;
-								}
-							}
-							if (do_unjam) {
-								catapult_group.move(
-									-MAX_VOLTAGE);
-								pros::delay(
-									500);
-								catapult_group
-									.move(0);
-								pros::delay(
-									1000);
+					Timer jam_timer = Timer();
+					if (catapult_group
+						    .get_current_draws()[0] >
+					    1750) {
+						bool do_unjam = true;
+						while (jam_timer
+							       .GetElapsedTime()
+							       .AsMilliseconds() <
+						       500) {
+							if (catapult_group
+								    .get_current_draws()
+									    [0] <
+							    1750) {
+								do_unjam =
+									false;
+								break;
 							}
 						}
+						if (do_unjam) {
+							catapult_group.move(
+								-MAX_VOLTAGE);
+							pros::delay(500);
+							catapult_group.move(0);
+							pros::delay(1000);
+						}
 					}
-					break;
+				} break;
 				case AutoActionType::WaitForCatapultEngage:
 					catapult_group.move(MAX_VOLTAGE);
 					catapult_block.brake();
@@ -653,6 +661,10 @@ class AutonomousSequence {
 					    300) {
 						num_ready_to_procede += 1;
 					}
+					break;
+				case AutoActionType::RunBlockingLambda:
+					step.lambda(auto_timer);
+					num_ready_to_procede += 1;
 					break;
 				}
 				pros::delay(5);
@@ -716,6 +728,53 @@ void autonomous()
 	left_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 	right_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 
+#define SKILLS
+
+#ifdef SKILLS
+	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
+	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
+	auto_sequence.deploy_catapult();
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 35, 0,
+				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
+	auto_sequence.wait_for_catapult_deploy();
+	// Fire catapult
+	auto_sequence.run_blocking_lambda([](Timer &auto_timer) {
+		catapult_block.brake();
+
+		int step = 1;
+		Timer delay_timer;
+		while (true) {
+			// ctrl.print(0, 0, "%i", step);
+			uint32_t slip_angle = std::max((uint32_t)0, (uint32_t)(catapult_group.get_positions()[0]-1500.0)) % 1250;
+			// ctrl.print(0, 1, "%i", catapult_group.get_current_draws()[0]);
+			if (step == 1) {
+				catapult_group.move(MAX_VOLTAGE);
+				if (slip_angle >= 1100) {
+					step += 1;
+					continue;
+				}
+			} else if (step == 3) {
+				if (delay_timer.GetElapsedTime()
+					    .AsMilliseconds() > 1500) {
+					step += 1;
+					continue;
+				}
+			} else if (step == 4) {
+				catapult_group.move(MAX_VOLTAGE);
+				if (slip_angle < 100) {
+					if (auto_timer.GetElapsedTime().AsMilliseconds() >= 42000)
+						break;
+					step = 1;
+					continue;
+				}
+			}
+
+
+			pros::delay(3);
+		}
+		catapult_group.move(0);
+	});
+#else
 	// Grab starting triball
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
 	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 0);
@@ -787,6 +846,7 @@ void autonomous()
 	auto_sequence.set_intake_extension(true, MAX_RPM, 0);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 6, MAX_RPM / 2.0,
 				    3000);
+#endif
 
 	auto_sequence.run_auto();
 
@@ -826,7 +886,7 @@ std::unique_ptr<Timer> climb_trigger_timer = std::make_unique<Timer>();
  */
 void opcontrol()
 {
-	initCommon();
+	initCommon(false);
 
 	if (!catapult_deployed_in_auto)
 		set_deploy_catapult();
@@ -834,6 +894,7 @@ void opcontrol()
 	while (true) {
 		handle_catapult_deploy();
 
+		// ctrl.print(0, 0, "%i", catapult_group.get_current_draws()[0]);
 		// ctrl.set_text(0, 0, std::to_string(imu.get_rotation()));
 
 		int l_stick_y = ctrl.get_analog(ANALOG_LEFT_Y);
@@ -894,7 +955,7 @@ void opcontrol()
 			if (do_reverse_catapult) {
 				catapult_group.move(-MAX_VOLTAGE);
 			} else if (do_fire_catapult) {
-				catapult_group.move(MAX_VOLTAGE * 0.9);
+				catapult_group.move(MAX_VOLTAGE);
 				catapult_block.brake();
 				// pros::lcd::set_text(1, std::to_string(catapult_group.get_current_draws()[0]));
 			} else {
