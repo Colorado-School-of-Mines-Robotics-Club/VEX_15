@@ -116,7 +116,7 @@ void set_deploy_catapult()
 bool has_intake_homed = false;
 bool has_imu_been_set = false;
 
-void initCommon(bool init_imu = true)
+void initCommon(bool init_imu)
 {
 	pros::lcd::initialize();
 
@@ -340,16 +340,16 @@ class AutonomousSequence {
 		autonomous_steps.push_back(new_action);
 	}
 
-	void move_position(double drive_target, double drive_speed,
+	void move_position(double drive_target, double drive_rpm,
 			   double timeout_ms)
 	{
-		move_position(drive_target, drive_target, drive_speed,
-			      drive_speed, timeout_ms);
+		move_position(drive_target, drive_target, drive_rpm, drive_rpm,
+			      timeout_ms);
 	}
 
 	void move_position(
 		double left_drive_target, double right_drive_target,
-		double left_drive_speed, double right_drive_speed,
+		double left_drive_rpm, double right_drive_rpm,
 		double timeout_ms,
 		MotorAction left_drive_action = MotorAction::MoveAbsolute,
 		MotorAction right_drive_action = MotorAction::MoveAbsolute)
@@ -359,10 +359,10 @@ class AutonomousSequence {
 		new_action.action_type = AutoActionType::DriveAction;
 		new_action.left_drive_action = left_drive_action;
 		new_action.left_drive_target = left_drive_target;
-		new_action.left_drive_speed = left_drive_speed;
+		new_action.left_drive_speed = left_drive_rpm;
 		new_action.right_drive_action = right_drive_action;
 		new_action.right_drive_target = right_drive_target;
-		new_action.right_drive_speed = right_drive_speed;
+		new_action.right_drive_speed = right_drive_rpm;
 
 		new_action.required_num_to_procede = 2;
 		new_action.timeout_ms = timeout_ms;
@@ -370,31 +370,31 @@ class AutonomousSequence {
 		autonomous_steps.push_back(new_action);
 	}
 
-	void drive_speed(double drive_speed, double timeout_ms)
+	void drive_power(double drive_voltage, double timeout_ms)
 	{
 		AutoStep new_action;
 
 		new_action.action_type = AutoActionType::DriveAction;
 		new_action.left_drive_action = MotorAction::MoveVoltage;
-		new_action.left_drive_speed = drive_speed;
+		new_action.left_drive_speed = drive_voltage;
 		new_action.right_drive_action = MotorAction::MoveVoltage;
-		new_action.right_drive_speed = drive_speed;
+		new_action.right_drive_speed = drive_voltage;
 
 		new_action.timeout_ms = timeout_ms;
 
 		autonomous_steps.push_back(new_action);
 	}
 
-	void drive_speed(double drive_speed_left, double drive_speed_right,
+	void drive_power(double drive_voltage_left, double drive_voltage_right,
 			 double timeout_ms)
 	{
 		AutoStep new_action;
 
 		new_action.action_type = AutoActionType::DriveAction;
 		new_action.left_drive_action = MotorAction::MoveVoltage;
-		new_action.left_drive_speed = drive_speed_left;
+		new_action.left_drive_speed = drive_voltage_left;
 		new_action.right_drive_action = MotorAction::MoveVoltage;
-		new_action.right_drive_speed = drive_speed_right;
+		new_action.right_drive_speed = drive_voltage_right;
 
 		new_action.timeout_ms = timeout_ms;
 
@@ -717,24 +717,39 @@ class AutonomousSequence {
  */
 void autonomous()
 {
+#define SKILLS
+
 	AutonomousSequence auto_sequence;
 	auto_sequence.start_timer();
 	has_imu_been_set = false;
 	has_intake_homed = false;
-	initCommon();
+#ifdef SKILLS
+	initCommon(false);
+#else
+	initCommon(true);
+#endif
 
 	left_drive_group.tare_position();
 	right_drive_group.tare_position();
 	left_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 	right_drive_group.set_brake_modes(pros::E_MOTOR_BRAKE_HOLD);
 
-#define SKILLS
-
 #ifdef SKILLS
-	auto_sequence.set_intake_extension(true, MAX_RPM, 250);
-	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
 	auto_sequence.deploy_catapult();
-	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 35, 0,
+	auto_sequence.drive_power(MAX_VOLTAGE, 500);
+	auto_sequence.drive_power(0, 250);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -14,
+				    DRIVE_UNITS_PER_INCH * -9.5, MAX_RPM,
+				    MAX_RPM / 2.5, 750);
+	// auto_sequence.set_intake_extension(true, MAX_RPM, 250);
+	// auto_sequence.set_intake_extension(false, MAX_RPM, 250);
+	// auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -25, DRIVE_UNITS_PER_DEGREE * 25, MAX_RPM, MAX_RPM, 500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -10, MAX_RPM, 500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -1,
+				    DRIVE_UNITS_PER_INCH * -18, MAX_RPM / 6.0,
+				    MAX_RPM, 1000);
+
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 35, -20,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
 	auto_sequence.wait_for_catapult_deploy();
 	// Fire catapult
@@ -745,35 +760,91 @@ void autonomous()
 		Timer delay_timer;
 		while (true) {
 			// ctrl.print(0, 0, "%i", step);
-			uint32_t slip_angle = std::max((uint32_t)0, (uint32_t)(catapult_group.get_positions()[0]-1500.0)) % 1250;
+			uint32_t slip_angle =
+				std::max(
+					(uint32_t)0,
+					(uint32_t)(catapult_group
+							   .get_positions()[0] -
+						   1500.0)) %
+				1258;
 			// ctrl.print(0, 1, "%i", catapult_group.get_current_draws()[0]);
 			if (step == 1) {
 				catapult_group.move(MAX_VOLTAGE);
 				if (slip_angle >= 1100) {
+					delay_timer.Restart();
+					step += 1;
+					continue;
+				}
+			} else if (step == 2) {
+				catapult_group.brake();
+				if (delay_timer.GetElapsedTime()
+					    .AsMilliseconds() > 150) {
 					step += 1;
 					continue;
 				}
 			} else if (step == 3) {
-				if (delay_timer.GetElapsedTime()
-					    .AsMilliseconds() > 1500) {
-					step += 1;
-					continue;
-				}
-			} else if (step == 4) {
 				catapult_group.move(MAX_VOLTAGE);
 				if (slip_angle < 100) {
-					if (auto_timer.GetElapsedTime().AsMilliseconds() >= 42000)
-						break;
 					step = 1;
 					continue;
 				}
 			}
 
+			// Timer starts when auto starts
+			if (auto_timer.GetElapsedTime().AsMilliseconds() >=
+			    49000)
+				break;
 
-			pros::delay(3);
+			Timer jam_timer = Timer();
+			if (catapult_group.get_current_draws()[0] > 1750) {
+				bool do_unjam = true;
+				while (jam_timer.GetElapsedTime()
+					       .AsMilliseconds() < 500) {
+					if (catapult_group
+						    .get_current_draws()[0] <
+					    1750) {
+						do_unjam = false;
+						break;
+					}
+				}
+				if (do_unjam) {
+					catapult_group.move(-MAX_VOLTAGE);
+					pros::delay(550);
+					catapult_group.move(0);
+					pros::delay(500);
+				}
+			}
+
+			pros::delay(5);
 		}
+		catapult_group.move(-MAX_VOLTAGE);
+		pros::delay(500);
 		catapult_group.move(0);
 	});
+	auto_sequence.drive_power(-MAX_VOLTAGE * 0.35, -MAX_VOLTAGE * 0.25,
+				  1200);
+	// Go to center
+	auto_sequence.move_position(0, DRIVE_UNITS_PER_DEGREE * 30, 0,
+				    MAX_RPM / 2.0, 2500);
+	auto_sequence.set_intake_spin(MAX_VOLTAGE, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 60, MAX_RPM, 1500);
+	// Turn towards other side of field
+	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 75,
+				    DRIVE_UNITS_PER_DEGREE * -75, MAX_RPM / 2.0,
+				    MAX_RPM / 2.0, 750);
+	// Go across
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 90, MAX_RPM, 750);
+	auto_sequence.run_blocking_lambda([](Timer &auto_timer) {
+		right_wing.set_value(true);
+		left_wing.set_value(true);
+	});
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 90, MAX_RPM, 3500);
+	auto_sequence.run_blocking_lambda([](Timer &auto_timer) {
+		right_wing.set_value(false);
+		left_wing.set_value(false);
+	});
+	auto_sequence.drive_power(-MAX_VOLTAGE, 400);
+	auto_sequence.set_intake_spin(0, 0);
 #else
 	// Grab starting triball
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
