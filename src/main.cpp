@@ -638,7 +638,7 @@ class AutonomousSequence {
 						if (do_unjam) {
 							catapult_group.move(
 								-MAX_VOLTAGE);
-							pros::delay(500);
+							pros::delay(650);
 							catapult_group.move(0);
 							pros::delay(1000);
 						}
@@ -766,7 +766,7 @@ void autonomous()
 					(uint32_t)(catapult_group
 							   .get_positions()[0] -
 						   1500.0)) %
-				1258;
+				1259;
 			// ctrl.print(0, 1, "%i", catapult_group.get_current_draws()[0]);
 			if (step == 1) {
 				catapult_group.move(MAX_VOLTAGE);
@@ -809,7 +809,7 @@ void autonomous()
 				}
 				if (do_unjam) {
 					catapult_group.move(-MAX_VOLTAGE);
-					pros::delay(550);
+					pros::delay(650);
 					catapult_group.move(0);
 					pros::delay(500);
 				}
