@@ -717,7 +717,7 @@ class AutonomousSequence {
  */
 void autonomous()
 {
-// #define SKILLS
+#define SKILLS
 
 	AutonomousSequence auto_sequence;
 	auto_sequence.start_timer();
@@ -741,6 +741,9 @@ void autonomous()
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -14,
 				    DRIVE_UNITS_PER_INCH * -9.5, MAX_RPM,
 				    MAX_RPM / 2.5, 750);
+	// auto_sequence.set_intake_extension(true, MAX_RPM, 250);
+	// auto_sequence.set_intake_extension(false, MAX_RPM, 250);
+	// auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * -25, DRIVE_UNITS_PER_DEGREE * 25, MAX_RPM, MAX_RPM, 500);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -10, MAX_RPM, 500);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -1,
 				    DRIVE_UNITS_PER_INCH * -18, MAX_RPM / 6.0,
@@ -843,90 +846,77 @@ void autonomous()
 	auto_sequence.drive_power(-MAX_VOLTAGE, 400);
 	auto_sequence.set_intake_spin(0, 0);
 #else
-	// Prep to fire
+	// Grab starting triball
+	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
+	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 0);
+	auto_sequence.move_position(-DRIVE_UNITS_PER_INCH * 1.5, MAX_RPM / 4.0,
+				    1500);
+	auto_sequence.drive_speed(0, 750);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 4.0,
+				    1000);
+	auto_sequence.set_intake_extension(false, MAX_RPM / 1.4, 500);
+	auto_sequence.set_intake_spin(0, 0);
+	// Move towards goal
+	auto_sequence.turn_imu(Direction::Clockwise, 83, MAX_VOLTAGE, 1500);
+	auto_sequence.set_intake_spin(0, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 10, MAX_RPM / 4.0,
+				    2500);
+	// Deploy catapult
 	auto_sequence.deploy_catapult();
-	auto_sequence.drive_power(-MAX_VOLTAGE * 0.35, 300);
+	// Outake
+	auto_sequence.set_intake_extension(false, MAX_RPM, 100);
+	auto_sequence.set_intake_spin(MAX_VOLTAGE / 2.5, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -8, MAX_RPM / 3.0,
+				    2500);
+	auto_sequence.set_intake_spin(0, 0);
+	// Go back to matchload zone
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -4, MAX_RPM, 2500);
+	auto_sequence.turn_imu(Direction::Clockwise, 160, MAX_VOLTAGE, 1500);
+	auto_sequence.drive_speed(-MAX_VOLTAGE, 300);
+	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, 750);
 	auto_sequence.move_position(DRIVE_UNITS_PER_DEGREE * 40, 0,
 				    MAX_RPM / 4.0, MAX_RPM / 4.0, 500);
-	auto_sequence.wait_for_catapult_deploy();
 	// Fire catapult
-	auto_sequence.run_blocking_lambda([](Timer &auto_timer) {
-		Timer lambda_timer;
-		catapult_block.brake();
-
-		int step = 1;
-		Timer delay_timer;
-		while (true) {
-			// ctrl.print(0, 0, "%i", step);
-			uint32_t slip_angle =
-				std::max(
-					(uint32_t)0,
-					(uint32_t)(catapult_group
-							   .get_positions()[0] -
-						   1500.0)) %
-				1259;
-			// ctrl.print(0, 1, "%i", catapult_group.get_current_draws()[0]);
-			if (step == 1) {
-				catapult_group.move(MAX_VOLTAGE);
-				if (slip_angle >= 1100) {
-					delay_timer.Restart();
-					step += 1;
-					continue;
-				}
-			} else if (step == 2) {
-				catapult_group.brake();
-				if (delay_timer.GetElapsedTime()
-					    .AsMilliseconds() > 150) {
-					step += 1;
-					continue;
-				}
-			} else if (step == 3) {
-				catapult_group.move(MAX_VOLTAGE);
-				if (slip_angle < 100) {
-					step = 1;
-					continue;
-				}
-			}
-
-			// Timer starts when auto starts
-			if (auto_timer.GetElapsedTime().AsMilliseconds() >=
-			    35000)
-				break;
-
-			Timer jam_timer = Timer();
-			if (catapult_group.get_current_draws()[0] > 1750) {
-				bool do_unjam = true;
-				while (jam_timer.GetElapsedTime()
-					       .AsMilliseconds() < 500) {
-					if (catapult_group
-						    .get_current_draws()[0] <
-					    1750) {
-						do_unjam = false;
-						break;
-					}
-				}
-				if (do_unjam) {
-					catapult_group.move(-MAX_VOLTAGE);
-					pros::delay(650);
-					catapult_group.move(0);
-					pros::delay(500);
-				}
-			}
-
-			pros::delay(5);
-		}
-		catapult_group.move(-MAX_VOLTAGE);
-		pros::delay(500);
-		catapult_group.move(0);
-	});
+	auto_sequence.fire_catapult_time(20000, MAX_VOLTAGE * 0.9);
+	auto_sequence.wait_for_catapult_engage();
+	auto_sequence.wait_for_catapult_slip();
 	// Home after firing
-	auto_sequence.drive_power(-MAX_VOLTAGE * 0.35, -MAX_VOLTAGE * 0.1,
+	auto_sequence.drive_speed(-MAX_VOLTAGE * 0.35, -MAX_VOLTAGE * 0.1,
 				  1000);
-	// Go to post
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 33, MAX_RPM, 2500);
-	auto_sequence.turn_imu(Direction::Clockwise, 45, MAX_VOLTAGE / 1.5, 1500);
-	auto_sequence.wait_until_match_time(41.0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 20, MAX_RPM / 2.0, 2500);
+	// Move and push triball under goal
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 10, MAX_RPM, 1000);
+	auto_sequence.turn_imu(Direction::Clockwise, 265, MAX_VOLTAGE, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -14, MAX_RPM / 2.0,
+				    1000);
+	auto_sequence.turn_imu(Direction::Clockwise, 300, MAX_VOLTAGE, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -16, MAX_RPM, 750);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM / 2.0,
+				    500);
+	// Move to post
+	auto_sequence.turn_imu(Direction::CounterClockwise, 225, MAX_VOLTAGE,
+			       1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 44, MAX_RPM, 2500);
+	auto_sequence.turn_imu(Direction::Clockwise, 253, MAX_VOLTAGE, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM / 4.0,
+				    2500);
+	// Turn & push triballs away
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -3, MAX_RPM / 2.0,
+				    1000);
+	auto_sequence.turn_imu(Direction::CounterClockwise, 255,
+			       MAX_VOLTAGE / 2.0, 1500);
+	auto_sequence.set_intake_extension(true, MAX_RPM, 0);
+	auto_sequence.set_intake_spin(MAX_VOLTAGE, 250);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 2, MAX_RPM / 2.0,
+				    750);
+	auto_sequence.set_intake_extension(false, MAX_RPM, 250);
+	auto_sequence.set_intake_spin(0, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 2.0,
+				    1000);
+	auto_sequence.turn_imu(Direction::Clockwise, 252, MAX_VOLTAGE, 500);
+	auto_sequence.wait_until_match_time(43.0);
+	auto_sequence.set_intake_extension(true, MAX_RPM, 0);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 6, MAX_RPM / 2.0,
+				    3000);
 #endif
 
 	auto_sequence.run_auto();
