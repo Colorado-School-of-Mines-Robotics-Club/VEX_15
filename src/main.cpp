@@ -542,10 +542,22 @@ class AutonomousSequence {
 								 step.imu_turn_half_offset ?
 							 0.5 :
 							 1.0);
-					left_drive_group.move(
-						step.left_drive_speed * mult);
-					right_drive_group.move(
-						-step.right_drive_speed * mult);
+					left_drive_group.set_brake_modes(
+						pros::E_MOTOR_BRAKE_HOLD);
+					right_drive_group.set_brake_modes(
+						pros::E_MOTOR_BRAKE_HOLD);
+					if (step.left_drive_speed == 0)
+						left_drive_group.brake();
+					else
+						left_drive_group.move(
+							step.left_drive_speed *
+							mult);
+					if (step.right_drive_speed == 0)
+						right_drive_group.brake();
+					else
+						right_drive_group.move(
+							-step.right_drive_speed *
+							mult);
 
 					if (std::abs(current_angle -
 						     step.imu_degree_target) <
@@ -694,10 +706,6 @@ class AutonomousSequence {
 							pros::E_MOTOR_BRAKE_HOLD);
 						left_drive_group.brake();
 						right_drive_group.brake();
-						left_drive_group.set_brake_modes(
-							pros::E_MOTOR_BRAKE_COAST);
-						right_drive_group.set_brake_modes(
-							pros::E_MOTOR_BRAKE_COAST);
 					}
 					case AutoActionType::WaitForCatapultSlip:
 						catapult_group.brake();
@@ -856,6 +864,7 @@ void autonomous()
 	auto_sequence.drive_power(-MAX_VOLTAGE, 400);
 	auto_sequence.set_intake_spin(0, 0);
 #else
+	auto_sequence.deploy_catapult();
 	// Grab starting triball
 	auto_sequence.set_intake_spin(-MAX_VOLTAGE, 0);
 	auto_sequence.set_intake_extension(true, MAX_RPM / 2.0, 0);
@@ -872,11 +881,10 @@ void autonomous()
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 7, MAX_RPM / 4.0,
 				    2500);
 	// Deploy catapult
-	auto_sequence.deploy_catapult();
 	// Outake
 	auto_sequence.set_intake_extension(false, MAX_RPM, 100);
 	auto_sequence.set_intake_spin(MAX_VOLTAGE / 2.5, 0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -5, MAX_RPM / 3.0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -6, MAX_RPM / 3.0,
 				    2500);
 	auto_sequence.set_intake_spin(0, 0);
 	// Go back to matchload zone
@@ -927,7 +935,7 @@ void autonomous()
 
 			// Timer starts when auto starts
 			if (auto_timer.GetElapsedTime().AsMilliseconds() >=
-			    30000)
+			    28000)
 				break;
 
 			Timer jam_timer = Timer();
@@ -961,19 +969,19 @@ void autonomous()
 				  1000);
 	// Move and push triball under goal
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 7, MAX_RPM, 1000);
-	auto_sequence.turn_imu(Direction::Clockwise, 265, MAX_VOLTAGE, 1500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -16, MAX_RPM / 2.0,
+	auto_sequence.turn_imu(Direction::Clockwise, 267, MAX_VOLTAGE, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -18, MAX_RPM / 2.0,
 				    1000);
-	auto_sequence.turn_imu(Direction::Clockwise, 300, MAX_VOLTAGE, 1500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -12, MAX_RPM / 3.0,
+	auto_sequence.turn_imu(Direction::Clockwise, 303, MAX_VOLTAGE, 1500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -19, MAX_RPM / 3.0,
 				    2500);
 	// Move to post
-	auto_sequence.turn_imu_separate(Direction::CounterClockwise, 225, 0,
-					MAX_VOLTAGE / 2.0, 1500);
+	auto_sequence.turn_imu_separate(Direction::CounterClockwise, 210, 0,
+					MAX_VOLTAGE, 3000);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 30, MAX_RPM, 2500);
-	auto_sequence.turn_imu(Direction::Clockwise, 245, MAX_VOLTAGE, 1500);
+	auto_sequence.turn_imu(Direction::Clockwise, 223, MAX_VOLTAGE, 1500);
 	auto_sequence.wait_until_match_time(41.0);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 12, MAX_RPM / 4.0,
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 13, MAX_RPM / 4.0,
 				    2500);
 #endif
 
