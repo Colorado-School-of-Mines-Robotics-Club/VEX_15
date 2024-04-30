@@ -320,13 +320,18 @@ class AutonomousSequence {
 		      double turn_target_range = 2.0,
 		      double imu_turn_half_offset = 5.0)
 	{
-		turn_imu_separate(direction, degrees, drive_voltage, drive_voltage, timeout_ms, delay_ms_after_done, turn_target_range, imu_turn_half_offset);
+		turn_imu_separate(direction, degrees, drive_voltage,
+				  drive_voltage, timeout_ms,
+				  delay_ms_after_done, turn_target_range,
+				  imu_turn_half_offset);
 	}
 
-	void turn_imu_separate(Direction direction, double degrees, double left_drive_voltage, double right_drive_voltage,
-		      double timeout_ms, uint32_t delay_ms_after_done = 5,
-		      double turn_target_range = 2.0,
-		      double imu_turn_half_offset = 5.0)
+	void turn_imu_separate(Direction direction, double degrees,
+			       double left_drive_voltage,
+			       double right_drive_voltage, double timeout_ms,
+			       uint32_t delay_ms_after_done = 5,
+			       double turn_target_range = 2.0,
+			       double imu_turn_half_offset = 5.0)
 	{
 		AutoStep new_action;
 
@@ -725,7 +730,7 @@ class AutonomousSequence {
  */
 void autonomous()
 {
-// #define SKILLS
+	// #define SKILLS
 
 	AutonomousSequence auto_sequence;
 	auto_sequence.start_timer();
@@ -960,10 +965,11 @@ void autonomous()
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -16, MAX_RPM / 2.0,
 				    1000);
 	auto_sequence.turn_imu(Direction::Clockwise, 300, MAX_VOLTAGE, 1500);
-	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -12, MAX_RPM / 3.0, 2500);
+	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * -12, MAX_RPM / 3.0,
+				    2500);
 	// Move to post
-	auto_sequence.turn_imu_separate(Direction::CounterClockwise, 225, 0, MAX_VOLTAGE / 2.0,
-			       1500);
+	auto_sequence.turn_imu_separate(Direction::CounterClockwise, 225, 0,
+					MAX_VOLTAGE / 2.0, 1500);
 	auto_sequence.move_position(DRIVE_UNITS_PER_INCH * 30, MAX_RPM, 2500);
 	auto_sequence.turn_imu(Direction::Clockwise, 245, MAX_VOLTAGE, 1500);
 	auto_sequence.wait_until_match_time(41.0);
